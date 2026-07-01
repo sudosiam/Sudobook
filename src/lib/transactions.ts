@@ -323,7 +323,8 @@ export async function voidSale(saleId: string, reason: string): Promise<void> {
     async () => {
       await voidLinkedJournalEntries(saleId, [sale.journalEntryId, sale.cogsEntryId], reason);
 
-      // Restore stock and weighted-average cost from the sale line snapshot.
+      // Restore stock qty only. COGS/inventory GL is reversed by voided journal entries;
+      // re-blending WAC here corrupts cost when stock was replenished after the sale.
       for (const item of sale.items) {
         const product = await db.products.get(item.productId);
         if (product) {
@@ -333,13 +334,7 @@ export async function voidSale(saleId: string, reason: string): Promise<void> {
             linkedId: saleId,
             note: 'Sale voided — stock restored',
           });
-          const newCost = weightedAverageCost(
-            product.stockQty,
-            product.costPrice,
-            item.qty,
-            item.costPrice,
-          );
-          await updateProductStock(product.id, { stockQty: balanceAfter, costPrice: newCost });
+          await updateProductStock(product.id, { stockQty: balanceAfter });
         }
       }
 
@@ -632,13 +627,17 @@ export async function voidPurchase(purchaseId: string, reason: string): Promise<
           linkedId: purchaseId,
           note: 'Purchase voided — stock removed',
         });
-        const restoredCost = reverseWeightedAverageCost(
-          product.stockQty,
-          product.costPrice,
-          item.qty,
-          item.unitCost,
-        );
-        await updateProductStock(product.id, { stockQty: balanceAfter, costPrice: restoredCost });
+        const stockPatch: { stockQty: number; costPrice?: number } = { stockQty: balanceAfter };
+        // Only reverse WAC when the full purchase batch is still on hand (no intervening sales).
+        if (product.stockQty === item.qty) {
+          stockPatch.costPrice = reverseWeightedAverageCost(
+            product.stockQty,
+            product.costPrice,
+            item.qty,
+            item.unitCost,
+          );
+        }
+        await updateProductStock(product.id, stockPatch);
       }
 
       await reverseBankTxnsFor(purchaseId);

@@ -178,7 +178,22 @@ export async function getTrialBalance(asOf?: string): Promise<TrialBalance> {
   }
 
   rows.sort((a, b) => a.code - b.code);
-  return { rows, totalDebit, totalCredit, balanced: totalDebit === totalCredit };
+
+  let ledgerDebit = 0;
+  let ledgerCredit = 0;
+  await foldPostedJournalLines({ upToDate: asOf }, (_code, dr, cr) => {
+    ledgerDebit += dr;
+    ledgerCredit += cr;
+  });
+
+  const trialBalanced = totalDebit === totalCredit;
+  const ledgerBalanced = ledgerDebit === ledgerCredit;
+  return {
+    rows,
+    totalDebit,
+    totalCredit,
+    balanced: trialBalanced && ledgerBalanced,
+  };
 }
 
 // ─── CASH FLOW (simplified) ───────────────────────────────────
@@ -198,15 +213,17 @@ export async function getCashFlow(start: string, end: string): Promise<CashFlow>
   const netChange = closing - opening;
 
   // Classify by counter-account of each cash/bank movement in the period.
-  const entries = await db.journalEntries.where('status').equals('posted').toArray();
   let operating = 0;
   let financing = 0;
   let investing = 0;
 
   const isCash = (code: number) => code === CODES.CASH || code === CODES.BANK;
 
-  for (const e of entries) {
-    if (e.date < start || e.date > end) continue;
+  await db.journalEntries
+    .where('date')
+    .between(start, end, true, true)
+    .each((e) => {
+    if (e.status !== 'posted') return;
 
     // Net effect on cash + bank across ALL legs (handles multi-line entries and
     // nets internal cash↔bank transfers to zero).
@@ -218,16 +235,16 @@ export async function getCashFlow(start: string, end: string): Promise<CashFlow>
         hasCash = true;
       }
     }
-    if (!hasCash || cashDelta === 0) continue;
+    if (!hasCash || cashDelta === 0) return;
 
     // Classify by entry type first, then fall back to counter-account heuristics.
     if (e.entryType === 'opening') {
       financing += cashDelta;
-      continue;
+      return;
     }
     if (e.entryType === 'adjustment' && e.lines.some((l) => l.accountCode === CODES.FIXED_ASSETS)) {
       investing += cashDelta;
-      continue;
+      return;
     }
     if (
       e.entryType === 'sale' ||
@@ -238,7 +255,7 @@ export async function getCashFlow(start: string, end: string): Promise<CashFlow>
       e.entryType === 'transfer'
     ) {
       operating += cashDelta;
-      continue;
+      return;
     }
 
     // Classify by the largest non-cash counter account in the entry.
@@ -256,7 +273,7 @@ export async function getCashFlow(start: string, end: string): Promise<CashFlow>
     if (counterCode >= 300 && counterCode < 400) financing += cashDelta;
     else if (counterCode === CODES.FIXED_ASSETS) investing += cashDelta;
     else operating += cashDelta;
-  }
+  });
 
   return { opening, operating, investing, financing, netChange, closing };
 }

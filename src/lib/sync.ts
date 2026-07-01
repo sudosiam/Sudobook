@@ -239,24 +239,30 @@ export async function pullFromSupabase(): Promise<void> {
     for (const { local, remote } of SYNC_TABLES) {
       if (missingRemoteTables.has(remote)) continue;
 
-      let query = supabase
-        .from(remote)
-        .select('id, data, updated_at, deleted_at')
-        .order('updated_at', { ascending: true });
-      if (since) query = query.gt('updated_at', since);
-
-      const { data, error } = await query;
-      if (error) {
-        if (isMissingTableError(error)) {
-          warnMissingTableOnce(remote);
-        } else {
-          console.error('[pullFromSupabase]', remote, error);
-        }
-        continue;
-      }
-
       const table = db.table(local);
-      for (const row of (data ?? []) as MirrorRow[]) {
+      const PULL_PAGE_SIZE = 500;
+      let page = 0;
+
+      while (true) {
+        let query = supabase
+          .from(remote)
+          .select('id, data, updated_at, deleted_at')
+          .order('updated_at', { ascending: true });
+        if (since) query = query.gt('updated_at', since);
+
+        const from = page * PULL_PAGE_SIZE;
+        const { data, error } = await query.range(from, from + PULL_PAGE_SIZE - 1);
+        if (error) {
+          if (isMissingTableError(error)) {
+            warnMissingTableOnce(remote);
+          } else {
+            console.error('[pullFromSupabase]', remote, error);
+          }
+          break;
+        }
+
+        const batch = (data ?? []) as MirrorRow[];
+        for (const row of batch) {
         try {
           if (row.deleted_at) {
             await table.delete(row.id);
@@ -294,6 +300,10 @@ export async function pullFromSupabase(): Promise<void> {
         } catch (err) {
           console.error('[pullFromSupabase] apply', remote, row.id, err);
         }
+        }
+
+        if (batch.length < PULL_PAGE_SIZE) break;
+        page += 1;
       }
     }
 

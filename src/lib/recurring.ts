@@ -20,6 +20,30 @@ function currentMonthKey(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+const MAX_CATCHUP_MONTHS = 24;
+
+function nextMonthKey(key: string): string {
+  const [y, m] = key.split('-').map(Number);
+  if (m === 12) return `${y + 1}-01`;
+  return `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+
+/** Month keys from first due through `through` (inclusive), capped for safety. */
+function monthKeysToPost(lastPosted: string | undefined, through: string): string[] {
+  if (!lastPosted) return [through];
+
+  const keys: string[] = [];
+  let cursor = nextMonthKey(lastPosted);
+  let guard = 0;
+  while (cursor <= through && guard < MAX_CATCHUP_MONTHS) {
+    keys.push(cursor);
+    if (cursor === through) break;
+    cursor = nextMonthKey(cursor);
+    guard += 1;
+  }
+  return keys;
+}
+
 export async function createRecurringExpense(input: RecurringExpenseInput): Promise<string> {
   recurringExpenseSchema.parse(input);
   const id = uuid();
@@ -98,14 +122,16 @@ export async function postRecurringForMonth(
   }
 }
 
-/** Post all active recurring expenses due for the current month. */
+/** Post all active recurring expenses due through the current month (catch-up included). */
 export async function postDueRecurringExpenses(): Promise<number> {
-  const monthKey = currentMonthKey();
+  const through = currentMonthKey();
   const templates = await activeWhere(db.recurringExpenses).toArray();
   let count = 0;
   for (const t of templates) {
-    const id = await postRecurringForMonth(t, monthKey);
-    if (id) count += 1;
+    for (const monthKey of monthKeysToPost(t.lastPostedMonth, through)) {
+      const id = await postRecurringForMonth(t, monthKey);
+      if (id) count += 1;
+    }
   }
   return count;
 }

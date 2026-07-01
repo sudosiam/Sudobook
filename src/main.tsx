@@ -5,6 +5,7 @@ import App from '@/App';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { DbOutdatedBanner } from '@/components/common/DbOutdatedBanner';
 import { seedDatabase } from '@/lib/seed';
+import { postDueRecurringExpenses } from '@/lib/recurring';
 import { ensureSyncReset, startSyncEngine } from '@/lib/sync';
 import { applyTheme, getStoredTheme } from '@/store/useThemeStore';
 import '@fontsource/inter/latin-400.css';
@@ -45,6 +46,11 @@ async function bootstrap() {
   try {
     await seedDatabase();
     await ensureSyncReset();
+    try {
+      await postDueRecurringExpenses();
+    } catch (err) {
+      console.error('[postDueRecurringExpenses]', err);
+    }
     startSyncEngine();
   } catch (err) {
     // Non-fatal: still render the app so existing local data remains visible

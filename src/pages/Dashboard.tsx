@@ -1,4 +1,6 @@
 import { lazy, Suspense, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import { AlertTriangle } from 'lucide-react';
 import { TopBar } from '@/components/layout/TopBar';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { StatCard } from '@/components/common/StatCard';
@@ -13,6 +15,7 @@ import { useSync } from '@/hooks/useSync';
 import { useAppStore } from '@/store/useAppStore';
 import { usePeriodStore } from '@/store/usePeriodStore';
 import { formatSyncAgo } from '@/lib/display';
+import { getLowStockCount } from '@/lib/reports';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db';
 
@@ -32,6 +35,7 @@ export default function Dashboard() {
   const { mode } = usePeriodStore();
   const { syncNow } = useSync();
   const lastSyncAt = useLiveQuery(() => db.settings.get('singleton').then((s) => s?.lastSyncAt ?? null), []);
+  const lowStockCount = useLiveQuery(() => getLowStockCount(), [], 0);
   const syncedAgo = formatSyncAgo(lastSyncAt ?? undefined);
 
   const onRefresh = useCallback(async () => {
@@ -70,6 +74,23 @@ export default function Dashboard() {
             {mode === 'all' && (
               <RevealItem>
                 <p className="text-xs text-muted">Financial Year {currentFY}</p>
+              </RevealItem>
+            )}
+
+            {lowStockCount > 0 && (
+              <RevealItem>
+                <Link
+                  to="/inventory"
+                  className="flex min-h-[48px] items-center gap-3 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 active:bg-warning/15"
+                >
+                  <AlertTriangle className="h-5 w-5 shrink-0 text-warning" aria-hidden />
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {lowStockCount} product{lowStockCount === 1 ? '' : 's'} low on stock
+                    </p>
+                    <p className="text-xs text-muted">Tap to review inventory</p>
+                  </div>
+                </Link>
               </RevealItem>
             )}
 
