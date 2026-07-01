@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Plus, Trash2 } from 'lucide-react';
-import { format } from 'date-fns';
+import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import { format, subDays } from 'date-fns';
 import { TopBar } from '@/components/layout/TopBar';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { Button, Field, FormDateInput, QtyInput, Select, Textarea } from '@/components/common/Field';
@@ -116,6 +116,22 @@ export default function NewSale() {
     prevTotalRef.current = total;
   }, [total, paidAmount, setValue]);
 
+  useEffect(() => {
+    if ((discount ?? 0) > subtotal) {
+      setValue('discount', subtotal, { shouldValidate: true });
+    }
+  }, [discount, subtotal, setValue]);
+
+  const duplicateProductIds = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items ?? []) {
+      if (item.productId) {
+        counts.set(item.productId, (counts.get(item.productId) ?? 0) + 1);
+      }
+    }
+    return new Set([...counts.entries()].filter(([, n]) => n > 1).map(([id]) => id));
+  }, [items]);
+
   const addItem = () => {
     append({
       productId: '',
@@ -173,6 +189,17 @@ export default function NewSale() {
     }
   };
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        void handleSubmit(onSubmit)();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleSubmit, onSubmit]);
+
   const needsBank =
     (paymentMethod === 'bank' || paymentMethod === 'upi') && (paidAmount ?? 0) > 0;
 
@@ -198,6 +225,21 @@ export default function NewSale() {
         <form onSubmit={handleSubmit(onSubmit)} className="page-stack">
           <Field label="Date" error={errors.date?.message}>
             <FormDateInput name="date" control={control} />
+            <div className="mt-2 flex flex-wrap gap-2">
+              {[
+                { label: 'Today', value: format(new Date(), 'yyyy-MM-dd') },
+                { label: 'Yesterday', value: format(subDays(new Date(), 1), 'yyyy-MM-dd') },
+              ].map((opt) => (
+                <button
+                  key={opt.label}
+                  type="button"
+                  onClick={() => setValue('date', opt.value, { shouldValidate: true })}
+                  className="rounded-full border border-border-app/60 px-3 py-1 text-xs font-medium text-muted active:bg-surface-hover"
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </Field>
 
           <CustomerNameInput
@@ -224,7 +266,20 @@ export default function NewSale() {
             {errors.items?.message && <p className="mb-2 text-xs text-danger">{errors.items.message}</p>}
             <div className="space-y-3">
               {fields.map((f, i) => (
-                <div key={f.id} className="rounded-lg border border-border-app p-3">
+                <div
+                  key={f.id}
+                  className={`rounded-lg border p-3 ${
+                    duplicateProductIds.has(items?.[i]?.productId ?? '')
+                      ? 'border-warning/60 bg-warning/5'
+                      : 'border-border-app'
+                  }`}
+                >
+                  {duplicateProductIds.has(items?.[i]?.productId ?? '') && (
+                    <p className="mb-2 flex items-center gap-1 text-xs text-warning">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      Same product on multiple lines — quantities will be combined
+                    </p>
+                  )}
                   <div className="mb-2 flex min-w-0 items-center gap-2">
                     <Select
                       className="min-w-0 flex-1"
@@ -261,7 +316,14 @@ export default function NewSale() {
                       <QtyInput
                         value={items?.[i]?.qty ?? 1}
                         onChange={(e) => {
+                          const raw = e.target.value.replace(/\D/g, '');
+                          const qty = Math.max(1, Number(raw) || 1);
+                          setValue(`items.${i}.qty`, qty);
+                          setValue(`items.${i}.total`, multiplyMoney(items?.[i]?.unitPrice || 0, qty));
+                        }}
+                        onBlur={(e) => {
                           const qty = Math.max(1, Number(e.target.value.replace(/\D/g, '')) || 1);
+                          e.target.value = String(qty);
                           setValue(`items.${i}.qty`, qty);
                           setValue(`items.${i}.total`, multiplyMoney(items?.[i]?.unitPrice || 0, qty));
                         }}
@@ -307,6 +369,9 @@ export default function NewSale() {
                 <option value="bank">Bank</option>
                 <option value="upi">UPI</option>
               </Select>
+              <p className="mt-1.5 text-xs text-muted">
+                Amount received below sets full, partial, or credit sale automatically.
+              </p>
             </Field>
 
             {needsBank && (

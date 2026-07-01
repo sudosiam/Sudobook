@@ -118,8 +118,8 @@ function NavSection({
                   cn(
                     'relative flex min-h-[48px] items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px] font-medium transition-colors active:bg-surface-hover',
                     isActive
-                      ? 'bg-brand/15 text-brand-light'
-                      : 'text-muted hover:bg-surface-hover hover:text-foreground',
+                      ? 'border-l-[3px] border-brand-light bg-brand/15 pl-2 text-brand-light'
+                      : 'border-l-[3px] border-transparent text-muted hover:bg-surface-hover hover:text-foreground',
                   )
                 }
               >
@@ -154,6 +154,17 @@ export function Sidebar() {
     () => db.products.filter((p) => p.isActive && p.stockQty <= p.minStock).count(),
     [],
   );
+  const settings = useLiveQuery(() => db.settings.get('singleton'), []);
+  const businessName = settings?.businessName?.trim() || 'Biswajit Power Hub';
+
+  useEffect(() => {
+    if (!trapActive) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeSidebar();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [trapActive, closeSidebar]);
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -185,12 +196,12 @@ export function Sidebar() {
         animate={{ x: isMobile ? (sidebarOpen ? 0 : '-100%') : 0 }}
         transition={springSnappy}
         style={{ willChange: 'transform' }}
-        className="no-print fixed inset-y-0 left-0 z-50 flex w-[15.5rem] flex-col border-r border-border-app/40 bg-app pt-safe shadow-xl md:static md:z-auto md:w-56 md:shadow-none"
+        className="no-print fixed inset-y-0 left-0 z-[60] flex w-[15.5rem] flex-col border-r border-border-app/40 bg-app pt-safe shadow-xl md:static md:z-auto md:w-56 md:shadow-none"
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border-app/40 px-3">
           <div>
             <p className="text-[15px] font-bold tracking-tight text-foreground">Sudo Books</p>
-            <p className="text-xs text-muted">Biswajit Power Hub</p>
+            <p className="truncate text-xs text-muted">{businessName}</p>
           </div>
           <button
             type="button"

@@ -25,6 +25,10 @@ export function BankTransferForm({ onDone }: { onDone: () => void }) {
     defaultValues: { date: format(new Date(), 'yyyy-MM-dd'), fromBankId: '', toBankId: '', amount: 0 },
   });
 
+  const fromBankId = watch('fromBankId');
+  const toBankId = watch('toBankId');
+  const sameAccount = fromBankId && toBankId && fromBankId === toBankId;
+
   const onSubmit = async (data: TransferFormData) => {
     try {
       await transferBetweenBanks(data);
@@ -60,13 +64,16 @@ export function BankTransferForm({ onDone }: { onDone: () => void }) {
           ))}
         </Select>
       </Field>
+      {sameAccount && (
+        <p className="text-xs text-danger">Source and destination must be different accounts.</p>
+      )}
       <Field label="Amount" error={errors.amount?.message}>
         <MoneyInput value={watch('amount')} onChange={(v) => setValue('amount', v)} />
       </Field>
       <Field label="Note" error={errors.note?.message}>
         <Input {...register('note')} placeholder="Optional" />
       </Field>
-      <Button type="submit" disabled={isSubmitting} className="w-full">
+      <Button type="submit" disabled={isSubmitting || !!sameAccount} className="w-full">
         Transfer
       </Button>
     </form>

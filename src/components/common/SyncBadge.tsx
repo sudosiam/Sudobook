@@ -1,10 +1,15 @@
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useSyncStore } from '@/store/useSyncStore';
 import { useSync } from '@/hooks/useSync';
+import { db } from '@/lib/db';
+import { formatSyncAgo } from '@/lib/display';
 
-export function SyncBadge() {
+export function SyncBadge({ compact = false }: { compact?: boolean }) {
   const isOnline = useSyncStore((s) => s.isOnline);
   const status = useSyncStore((s) => s.status);
   const { pendingCount, failedCount, syncNow, isSupabaseConfigured } = useSync();
+  const lastSyncAt = useLiveQuery(() => db.settings.get('singleton').then((s) => s?.lastSyncAt ?? null), []);
+  const syncedAgo = formatSyncAgo(lastSyncAt ?? undefined);
 
   if (!isSupabaseConfigured) {
     return (
@@ -17,7 +22,7 @@ export function SyncBadge() {
 
   if (!isOnline) {
     return (
-      <span className="flex items-center gap-1 text-xs text-muted">
+      <span className="flex items-center gap-1 text-xs text-muted" title="Offline">
         <span className="h-1.5 w-1.5 rounded-full bg-disabled" />
         Offline
       </span>
@@ -26,16 +31,25 @@ export function SyncBadge() {
 
   if (status === 'syncing') {
     return (
-      <span className="flex items-center gap-1 text-xs text-brand-light">
+      <button
+        type="button"
+        onClick={() => void syncNow()}
+        className="flex min-h-[32px] items-center gap-1 rounded-lg px-1.5 text-xs text-brand-light"
+      >
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-light" />
         Syncing…
-      </span>
+      </button>
     );
   }
 
   if (pendingCount > 0 || failedCount > 0) {
     return (
-      <button onClick={() => void syncNow()} className="flex items-center gap-1 text-xs text-warning">
+      <button
+        type="button"
+        onClick={() => void syncNow()}
+        className="flex min-h-[32px] items-center gap-1 rounded-lg px-1.5 text-xs text-warning"
+        title="Tap to sync now"
+      >
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-warning" />
         {failedCount > 0 ? `Failed (${failedCount})` : `Pending (${pendingCount})`}
       </button>
@@ -43,9 +57,14 @@ export function SyncBadge() {
   }
 
   return (
-    <button onClick={() => void syncNow()} className="flex items-center gap-1 text-xs text-success">
-      <span className="h-1.5 w-1.5 rounded-full bg-success" />
-      Synced
+    <button
+      type="button"
+      onClick={() => void syncNow()}
+      className="flex min-h-[32px] max-w-[9rem] items-center gap-1 truncate rounded-lg px-1.5 text-xs text-success"
+      title={syncedAgo ? `Last synced ${syncedAgo}` : 'Tap to sync now'}
+    >
+      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
+      {compact ? 'Synced' : syncedAgo ? `Synced ${syncedAgo}` : 'Synced'}
     </button>
   );
 }

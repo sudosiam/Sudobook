@@ -99,6 +99,7 @@ export function ConfirmDialog({
           type="button"
           variant={danger ? 'danger' : 'primary'}
           className="flex-1"
+          autoFocus={!requireReason && !requirePhrase}
           onClick={() => void handleConfirm()}
           disabled={busy || !canConfirm}
         >

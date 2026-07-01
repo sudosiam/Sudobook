@@ -132,7 +132,13 @@ export const expenseSchema = z
 
 export const customerSchema = z.object({
   name: z.string().min(1, 'Name required'),
-  phone: z.string().min(1, 'Phone required'),
+  phone: z
+    .string()
+    .min(1, 'Phone required')
+    .transform((s) => s.replace(/\D/g, ''))
+    .refine((s) => /^[6-9]\d{9}$/.test(s), {
+      message: 'Enter a valid 10-digit Indian mobile number',
+    }),
   address: z.string().optional(),
   openingBalance: paise,
   notes: z.string().optional(),
@@ -140,7 +146,13 @@ export const customerSchema = z.object({
 
 export const vendorSchema = z.object({
   name: z.string().min(1, 'Name required'),
-  phone: z.string().min(1, 'Phone required'),
+  phone: z
+    .string()
+    .min(1, 'Phone required')
+    .transform((s) => s.replace(/\D/g, ''))
+    .refine((s) => /^[6-9]\d{9}$/.test(s), {
+      message: 'Enter a valid 10-digit Indian mobile number',
+    }),
   company: z.string().optional(),
   address: z.string().optional(),
   openingBalance: paise,

@@ -152,7 +152,7 @@ export default function Settings() {
   return (
     <>
       <TopBar title="Settings" />
-      <PageContainer>
+      <PageContainer className="min-h-0 flex-1 overflow-y-auto pb-8">
         <div className="space-y-6">
           <section>
             <h2 className="mb-2 text-xs uppercase tracking-wider text-muted">Appearance</h2>

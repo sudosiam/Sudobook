@@ -5,12 +5,14 @@ import { Toaster } from '@/components/common/Toaster';
 import { useOnline } from '@/hooks/useOnline';
 import { useAuth } from '@/hooks/useAuth';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useScrollRestoration } from '@/hooks/useScrollRestoration';
 import { useAppStore } from '@/store/useAppStore';
 import { getCurrentFY } from '@/lib/sequences';
 
 export function AppShell() {
   useOnline();
   useAuth();
+  useScrollRestoration();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const isMobile = useIsMobile();
 
@@ -25,11 +27,11 @@ export function AppShell() {
   }, []);
 
   return (
-    <div className="flex min-h-full min-w-0 overflow-x-hidden bg-app">
+    <div className="flex min-h-dvh min-w-0 overflow-x-hidden bg-app">
       <Sidebar />
       <main
         id="app-main"
-        className="flex min-w-0 flex-1 flex-col"
+        className="flex min-h-dvh min-w-0 flex-1 flex-col"
         aria-hidden={isMobile && sidebarOpen ? true : undefined}
       >
         <Outlet />

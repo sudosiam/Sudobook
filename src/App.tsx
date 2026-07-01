@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { MotionConfig } from 'motion/react';
 import { AppShell } from '@/components/layout/AppShell';
-import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { PageRouteSkeleton } from '@/components/common/PageRouteSkeleton';
 import { lazyRetry } from '@/lib/lazyRetry';
 
 const Dashboard = lazyRetry(() => import('@/pages/Dashboard'));
@@ -51,7 +51,7 @@ const ManualBankEntryPage = lazyRetry(() => import('@/pages/banking/ManualBankEn
 export default function App() {
   return (
     <MotionConfig reducedMotion="user">
-      <Suspense fallback={<LoadingSpinner className="mt-20" />}>
+      <Suspense fallback={<PageRouteSkeleton />}>
         <Routes>
           <Route element={<AppShell />}>
           <Route path="/" element={<Dashboard />} />

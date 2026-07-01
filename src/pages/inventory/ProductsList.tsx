@@ -105,11 +105,21 @@ export default function ProductsList() {
                     to={`/inventory/${p.id}`}
                     className="flex min-h-[52px] items-center justify-between rounded-xl border border-border-app bg-surface px-4 py-3 active:bg-surface-hover"
                   >
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
                       <p className="mt-0.5 truncate text-xs text-muted">
                         {p.sku} · {categoryNames.get(p.category) ?? p.category}
                       </p>
+                      {p.minStock > 0 && (
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-border-app/60">
+                          <div
+                            className={`h-full rounded-full ${low ? 'bg-warning' : 'bg-success'}`}
+                            style={{
+                              width: `${Math.min(100, Math.round((p.stockQty / Math.max(p.minStock * 2, 1)) * 100))}%`,
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
                     <div className="ml-3 shrink-0 text-right">
                       <p className={`text-sm font-semibold ${low ? 'text-warning' : 'text-foreground'}`}>

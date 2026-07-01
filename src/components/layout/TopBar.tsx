@@ -1,6 +1,7 @@
 import { ArrowLeft, Menu } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { SyncBadge } from '@/components/common/SyncBadge';
 import { useAppStore } from '@/store/useAppStore';
 
 /** Primary destinations reachable from the sidebar — these show the menu button. */
@@ -65,6 +66,7 @@ export function TopBar({
           </h1>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 overflow-visible pr-2 sm:pr-2.5">
+          <SyncBadge compact />
           {right}
         </div>
       </header>
