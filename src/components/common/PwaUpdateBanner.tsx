@@ -37,7 +37,7 @@ export function PwaUpdateBanner() {
   if (!needRefresh) return null;
 
   return (
-    <div className="pointer-events-auto fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-[190] mx-3 flex items-center justify-between gap-3 rounded-xl border border-brand/40 bg-[#0F3D91] px-4 py-3 shadow-lg shadow-black/40 md:bottom-4 md:mx-auto md:max-w-md">
+    <div className="pointer-events-auto fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-[190] mx-3 flex items-center justify-between gap-3 rounded-xl border border-brand/40 bg-brand px-4 py-3 shadow-lg shadow-black/40 md:bottom-4 md:mx-auto md:max-w-md">
       <div className="min-w-0">
         <p className="text-sm font-semibold text-white">Update available</p>
         <p className="text-xs text-white/80">Reload for the latest Sudo Books version</p>
@@ -53,7 +53,7 @@ export function PwaUpdateBanner() {
         <button
           type="button"
           onClick={() => void updateServiceWorker(true)}
-          className="flex min-h-[40px] items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-semibold text-[#0F3D91] active:bg-white/90"
+          className="flex min-h-[40px] items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-semibold text-brand active:bg-white/90"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           Reload

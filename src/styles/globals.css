@@ -20,9 +20,8 @@
   --color-warning: var(--c-warning);
 
   /* UI copy — Inter; numbers — Roboto (Android Material, easy to scan) */
-  --font-sans:
-    'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-numeric: Roboto, 'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-numeric: Roboto, Inter, ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 

@@ -24,7 +24,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { db } from '@/lib/db';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { useOverlayBack } from '@/hooks/useOverlayBack';
+import { useSwipeBack } from '@/hooks/useSwipeBack';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { backdropVariants, springSnappy } from '@/lib/motion';
@@ -99,7 +99,6 @@ function NavSection({
   lowStockCount?: number;
   onNavigate: () => void;
 }) {
-
   return (
     <div>
       <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-wide text-disabled">{title}</p>
@@ -141,23 +140,28 @@ function NavSection({
   );
 }
 
+const SIDEBAR_HISTORY_KEY = 'sudoBooksSidebar';
+
 export function Sidebar() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
   const location = useLocation();
   const isMobile = useIsMobile();
   const asideRef = useRef<HTMLElement>(null);
+  const historyMarkerRef = useRef(false);
 
-  const closeSidebar = useCallback(() => setSidebarOpen(false), [setSidebarOpen]);
+  const closeSidebar = useCallback(() => {
+    setSidebarOpen(false);
+    if (historyMarkerRef.current) {
+      historyMarkerRef.current = false;
+      history.back();
+    }
+  }, [setSidebarOpen]);
+
   const trapActive = isMobile && sidebarOpen;
   useFocusTrap(trapActive, asideRef, closeSidebar);
 
-  const { close: dismissSidebar, touchHandlers: sidebarSwipe } = useOverlayBack(
-    sidebarOpen,
-    isMobile,
-    closeSidebar,
-    { panelRef: asideRef, swipe: 'panel-left' },
-  );
+  const sidebarSwipe = useSwipeBack(trapActive, closeSidebar, asideRef, 'panel-left');
 
   const lowStockCount = useLiveQuery(
     () => db.products.filter((p) => p.isActive && p.stockQty <= p.minStock).count(),
@@ -166,22 +170,41 @@ export function Sidebar() {
   const settings = useLiveQuery(() => db.settings.get('singleton'), []);
   const businessName = settings?.businessName?.trim() ?? '';
 
+  /** Close drawer when route changes — state only, no history.back (router owns navigation). */
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname, setSidebarOpen]);
+
+  /** Android / browser back closes the drawer without breaking in-app navigation. */
+  useEffect(() => {
+    if (!trapActive) return;
+
+    history.pushState({ [SIDEBAR_HISTORY_KEY]: true }, '');
+    historyMarkerRef.current = true;
+
+    const onPopState = () => {
+      historyMarkerRef.current = false;
+      setSidebarOpen(false);
+    };
+    window.addEventListener('popstate', onPopState);
+
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+      if (historyMarkerRef.current) {
+        historyMarkerRef.current = false;
+        history.replaceState(null, '');
+      }
+    };
+  }, [trapActive, setSidebarOpen]);
+
   useEffect(() => {
     if (!trapActive) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') dismissSidebar();
+      if (e.key === 'Escape') closeSidebar();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [trapActive, dismissSidebar]);
-
-  const sidebarOpenRef = useRef(sidebarOpen);
-  sidebarOpenRef.current = sidebarOpen;
-
-  /** Close on route change only — must not depend on `sidebarOpen` or the menu closes instantly. */
-  useEffect(() => {
-    if (sidebarOpenRef.current) dismissSidebar();
-  }, [location.pathname, dismissSidebar]);
+  }, [trapActive, closeSidebar]);
 
   return (
     <>
@@ -191,7 +214,7 @@ export function Sidebar() {
             type="button"
             aria-label="Close menu"
             className="no-print fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
-            onClick={dismissSidebar}
+            onClick={closeSidebar}
             initial="hidden"
             animate="visible"
             exit="exit"
@@ -221,7 +244,7 @@ export function Sidebar() {
           </div>
           <button
             type="button"
-            onClick={dismissSidebar}
+            onClick={closeSidebar}
             className="icon-btn md:hidden"
             aria-label="Close menu"
           >
@@ -237,7 +260,7 @@ export function Sidebar() {
                 title={category.title}
                 items={category.items}
                 lowStockCount={lowStockCount}
-                onNavigate={dismissSidebar}
+                onNavigate={() => setSidebarOpen(false)}
               />
             ))}
           </div>

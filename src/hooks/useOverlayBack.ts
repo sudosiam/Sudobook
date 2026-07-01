@@ -54,11 +54,11 @@ export function useOverlayBack(
 
   const close = useCallback(() => {
     const handler = historyHandlerRef.current;
-    if (enabled && useHistory && open && handler && !closedViaPopRef.current) {
+    if (enabled && useHistory && handler && !closedViaPopRef.current) {
       if (dismissOverlayHistory(handler)) return;
     }
     onCloseRef.current();
-  }, [enabled, useHistory, open]);
+  }, [enabled, useHistory]);
 
   const touchHandlers = useSwipeBack(
     open && enabled && swipeMode !== 'none',

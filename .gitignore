@@ -27,3 +27,8 @@ pnpm-debug.log*
 
 # Build
 dev-dist
+*.tsbuildinfo
+
+# Audit / temp extracts (never commit)
+*_extract.txt
+*_audit*.xml
