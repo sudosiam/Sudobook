@@ -1,7 +1,6 @@
 # Sudo Books
 
-A local-first, mobile-first accounting & finance **PWA** for **Biswajit Power Hub**
-(an EV showroom in Berhampore, West Bengal). Not an invoicing app, no GST — a
+A local-first, mobile-first accounting & finance **PWA**. Not an invoicing app, no GST — a
 complete double-entry accounting, inventory, banking and reporting system for a
 single owner, in Indian Rupee, with an April–March financial year.
 

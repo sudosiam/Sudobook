@@ -155,7 +155,7 @@ export function Sidebar() {
     [],
   );
   const settings = useLiveQuery(() => db.settings.get('singleton'), []);
-  const businessName = settings?.businessName?.trim() || 'Biswajit Power Hub';
+  const businessName = settings?.businessName?.trim() ?? '';
 
   useEffect(() => {
     if (!trapActive) return;
@@ -201,7 +201,9 @@ export function Sidebar() {
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border-app/40 px-3">
           <div>
             <p className="text-[15px] font-bold tracking-tight text-foreground">Sudo Books</p>
-            <p className="truncate text-xs text-muted">{businessName}</p>
+            {businessName ? (
+              <p className="truncate text-xs text-muted">{businessName}</p>
+            ) : null}
           </div>
           <button
             type="button"

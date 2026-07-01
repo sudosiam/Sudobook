@@ -16,6 +16,10 @@ import {
   RETRY_FAILED_SYNC_MIGRATION,
   retryFailedSyncQueue,
 } from '@/lib/migrations/retryFailedSyncQueue';
+import {
+  CLEAR_DEFAULT_BUSINESS_NAME_MIGRATION,
+  clearDefaultBusinessName,
+} from '@/lib/migrations/clearDefaultBusinessName';
 
 /** Short random per-device code (e.g. "A3F9") keeps document numbers unique across devices. */
 function makeDeviceId(): string {
@@ -90,7 +94,7 @@ export async function seedDatabase(): Promise<void> {
 
       const settings: AppSettings = {
         id: 'singleton',
-        businessName: 'Biswajit Power Hub',
+        businessName: '',
         currentFY: getCurrentFY(),
         fyStartMonth: 4,
         cashAccountId,
@@ -148,6 +152,14 @@ export async function runMigrations(): Promise<void> {
     const s = await db.settings.get('singleton');
     const migrations = new Set(s?.migrations ?? []);
     migrations.add(RETRY_FAILED_SYNC_MIGRATION);
+    await db.settings.update('singleton', { migrations: [...migrations] });
+  }
+
+  if (!done.has(CLEAR_DEFAULT_BUSINESS_NAME_MIGRATION)) {
+    await clearDefaultBusinessName();
+    const s = await db.settings.get('singleton');
+    const migrations = new Set(s?.migrations ?? []);
+    migrations.add(CLEAR_DEFAULT_BUSINESS_NAME_MIGRATION);
     await db.settings.update('singleton', { migrations: [...migrations] });
   }
 

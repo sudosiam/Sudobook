@@ -59,8 +59,7 @@ export default function Settings() {
 
   const saveName = async () => {
     try {
-      const name = businessName.trim() || settings.businessName;
-      await db.settings.update('singleton', { businessName: name });
+      await db.settings.update('singleton', { businessName: businessName.trim() });
       toast.success('Saved');
     } catch (err) {
       console.error('[saveName]', err);
@@ -311,7 +310,7 @@ export default function Settings() {
           </section>
 
           <p className="text-center text-xs text-disabled">
-            Sudo Books v{APP_VERSION} · Biswajit Power Hub
+            Sudo Books v{APP_VERSION}
           </p>
         </div>
       </PageContainer>

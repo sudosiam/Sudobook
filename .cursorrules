@@ -1,5 +1,5 @@
 # SUDO BOOKS PWA — Cursor AI Rules
-# Industrial-Grade Accounting & Finance App for Biswajit Power Hub
+# Industrial-Grade Accounting & Finance PWA
 # Stack: React 18 + Vite + TypeScript + Dexie.js + Supabase + Tailwind v4
 # Mobile-First PWA | Local-First | Dark Theme | Solo User
 
@@ -7,13 +7,11 @@
 
 ## PROJECT IDENTITY
 
-This is "Sudo Books" — a local-first PWA for managing Biswajit Power Hub
-(an EV showroom in Berhampore, West Bengal selling e-scooters, e-rickshaws,
-and lithium batteries). It is NOT an invoicing app and has NO GST features.
+This is "Sudo Books" — a local-first PWA for small business accounting,
+finance, and inventory management. It is NOT an invoicing app and has NO GST features.
 It is a complete accounting, finance, and inventory management system.
 
-Business: Biswajit Power Hub | www.biswajitpowerhub.com
-Owner: Solo user (Biswajit) | Mobile-first | Android PWA primary target
+Owner: Solo user | Mobile-first | Android PWA primary target
 Currency: Indian Rupee (INR) only | Financial Year: April–March (India)
 
 ---
