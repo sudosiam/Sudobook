@@ -14,6 +14,13 @@ export const springSoft: Transition = { type: 'spring', stiffness: 340, damping:
 /** CSS fallback easing (ease-out-expo) — use for plain Tailwind transitions. */
 export const easePremium = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
+/** Full-screen modal (mobile) — fade only, no transform compositing. */
+export const fullScreenModalVariants: Variants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0.15 } },
+  exit: { opacity: 0, transition: { duration: 0.12 } },
+};
+
 /** Bottom sheet / modal panel — slides up from below, springs into place. */
 export const sheetVariants: Variants = {
   hidden: { y: '100%', opacity: 0.6 },

@@ -3,24 +3,7 @@ import type { ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SyncBadge } from '@/components/common/SyncBadge';
 import { useAppStore } from '@/store/useAppStore';
-
-/** Primary destinations reachable from the sidebar — these show the menu button. */
-const PRIMARY_ROUTES = new Set([
-  '/',
-  '/sales',
-  '/purchases',
-  '/expenses',
-  '/inventory',
-  '/customers',
-  '/vendors',
-  '/banking',
-  '/ledger',
-  '/reports',
-  '/growth',
-  '/payments',
-  '/more',
-  '/settings',
-]);
+import { isPrimaryRoute } from '@/lib/navigation';
 
 export function TopBar({
   title,
@@ -36,7 +19,7 @@ export function TopBar({
   const navigate = useNavigate();
   const location = useLocation();
 
-  const showBack = back ?? !PRIMARY_ROUTES.has(location.pathname);
+  const showBack = back ?? !isPrimaryRoute(location.pathname);
 
   return (
     <div className="sticky top-0 z-30 bg-app/95 pt-safe backdrop-blur-md">

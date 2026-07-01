@@ -14,7 +14,7 @@ import {
   Truck,
   Users,
   Wallet,
-  X,
+  ArrowLeft,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -24,6 +24,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { db } from '@/lib/db';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useOverlayBack } from '@/hooks/useOverlayBack';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { backdropVariants, springSnappy } from '@/lib/motion';
@@ -91,12 +92,13 @@ function NavSection({
   title,
   items,
   lowStockCount,
+  onNavigate,
 }: {
   title: string;
   items: NavItem[];
   lowStockCount?: number;
+  onNavigate: () => void;
 }) {
-  const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
 
   return (
     <div>
@@ -113,7 +115,7 @@ function NavSection({
               <NavLink
                 to={item.to}
                 end={item.end}
-                onClick={() => setSidebarOpen(false)}
+                onClick={onNavigate}
                 className={({ isActive }) =>
                   cn(
                     'relative flex min-h-[48px] items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px] font-medium transition-colors active:bg-surface-hover',
@@ -150,6 +152,13 @@ export function Sidebar() {
   const trapActive = isMobile && sidebarOpen;
   useFocusTrap(trapActive, asideRef, closeSidebar);
 
+  const { close: dismissSidebar, touchHandlers: sidebarSwipe } = useOverlayBack(
+    sidebarOpen,
+    isMobile,
+    closeSidebar,
+    { panelRef: asideRef, swipe: 'panel-left' },
+  );
+
   const lowStockCount = useLiveQuery(
     () => db.products.filter((p) => p.isActive && p.stockQty <= p.minStock).count(),
     [],
@@ -160,15 +169,15 @@ export function Sidebar() {
   useEffect(() => {
     if (!trapActive) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeSidebar();
+      if (e.key === 'Escape') dismissSidebar();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [trapActive, closeSidebar]);
+  }, [trapActive, dismissSidebar]);
 
   useEffect(() => {
-    setSidebarOpen(false);
-  }, [location.pathname, setSidebarOpen]);
+    if (sidebarOpen) dismissSidebar();
+  }, [location.pathname, sidebarOpen, dismissSidebar]);
 
   return (
     <>
@@ -178,7 +187,7 @@ export function Sidebar() {
             type="button"
             aria-label="Close menu"
             className="no-print fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
-            onClick={() => setSidebarOpen(false)}
+            onClick={dismissSidebar}
             initial="hidden"
             animate="visible"
             exit="exit"
@@ -197,6 +206,7 @@ export function Sidebar() {
         transition={springSnappy}
         style={{ willChange: 'transform' }}
         className="no-print fixed inset-y-0 left-0 z-[60] flex w-[15.5rem] flex-col border-r border-border-app/40 bg-app pt-safe shadow-xl md:static md:z-auto md:w-56 md:shadow-none"
+        {...sidebarSwipe}
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border-app/40 px-3">
           <div>
@@ -207,11 +217,11 @@ export function Sidebar() {
           </div>
           <button
             type="button"
-            onClick={() => setSidebarOpen(false)}
+            onClick={dismissSidebar}
             className="icon-btn md:hidden"
             aria-label="Close menu"
           >
-            <X className="h-5 w-5" />
+            <ArrowLeft className="h-[22px] w-[22px]" />
           </button>
         </div>
 
@@ -223,6 +233,7 @@ export function Sidebar() {
                 title={category.title}
                 items={category.items}
                 lowStockCount={lowStockCount}
+                onNavigate={dismissSidebar}
               />
             ))}
           </div>

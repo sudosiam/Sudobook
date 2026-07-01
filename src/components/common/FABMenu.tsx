@@ -14,6 +14,8 @@ import { cn } from '@/lib/utils';
 import { ui } from '@/lib/ui-classes';
 import { backdropVariants, fabItemVariants, springSnappy } from '@/lib/motion';
 import { haptics } from '@/lib/haptics';
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { useOverlayBack } from '@/hooks/useOverlayBack';
 
 export type FABMenuItem = {
   to: string;
@@ -33,16 +35,22 @@ export const dashboardAddItems: FABMenuItem[] = [
 export function FABMenu({ items }: { items: FABMenuItem[] }) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
+
+  const { close: dismissMenu } = useOverlayBack(open, isMobile, () => setOpen(false), {
+    swipe: 'none',
+  });
 
   const handleSelect = (item: FABMenuItem) => {
     haptics.tap();
-    setOpen(false);
+    dismissMenu();
     navigate(item.to, item.state ? { state: item.state } : undefined);
   };
 
   const handleToggle = () => {
     haptics.tap();
-    setOpen((v) => !v);
+    if (open) dismissMenu();
+    else setOpen(true);
   };
 
   return (
@@ -53,7 +61,7 @@ export function FABMenu({ items }: { items: FABMenuItem[] }) {
             type="button"
             aria-label="Close add menu"
             className="no-print fixed inset-0 z-30 bg-black/50 backdrop-blur-[2px]"
-            onClick={() => setOpen(false)}
+            onClick={dismissMenu}
             initial="hidden"
             animate="visible"
             exit="exit"

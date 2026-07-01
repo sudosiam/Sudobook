@@ -1,11 +1,11 @@
-import { X } from 'lucide-react';
-import { AnimatePresence, motion, useDragControls, useReducedMotion, type PanInfo } from 'motion/react';
-import { useCallback, useId, useRef, type ReactNode } from 'react';
+import { ArrowLeft, X } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { useId, useRef, type ReactNode } from 'react';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
-import { backdropVariants, sheetVariants } from '@/lib/motion';
-
-const DRAG_CLOSE_OFFSET = 120;
-const DRAG_CLOSE_VELOCITY = 500;
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { useOverlayBack } from '@/hooks/useOverlayBack';
+import { backdropVariants, dialogVariants, fullScreenModalVariants } from '@/lib/motion';
+import { cn } from '@/lib/utils';
 
 export function Modal({
   open,
@@ -23,72 +23,102 @@ export function Modal({
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
   const reduceMotion = useReducedMotion();
-  const dragControls = useDragControls();
 
-  const handleClose = useCallback(() => {
-    onClose();
-  }, [onClose]);
+  const { close: handleClose, touchHandlers } = useOverlayBack(open, isMobile, onClose, {
+    panelRef,
+    swipe: isMobile ? 'edge-right' : 'none',
+  });
 
   useFocusTrap(open, panelRef, handleClose);
 
-  const handleDragEnd = (_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (info.offset.y > DRAG_CLOSE_OFFSET || info.velocity.y > DRAG_CLOSE_VELOCITY) {
-      handleClose();
-    }
-  };
+  const panelVariants = isMobile || reduceMotion ? fullScreenModalVariants : dialogVariants;
 
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[90] flex items-end justify-center sm:items-center">
-          <motion.button
-            type="button"
-            aria-label="Close dialog"
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={handleClose}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            variants={backdropVariants}
-          />
+        <div
+          className={cn(
+            'fixed inset-0 z-[90]',
+            isMobile ? 'flex flex-col' : 'flex items-center justify-center p-4',
+          )}
+        >
+          {!isMobile && (
+            <motion.button
+              type="button"
+              aria-label="Close dialog"
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={handleClose}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              variants={backdropVariants}
+            />
+          )}
           <motion.div
             ref={panelRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
             aria-describedby={description ? descriptionId : undefined}
-            className="relative z-10 max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-[1.25rem] border border-border-app/40 bg-surface p-4 pb-safe shadow-[var(--shadow-elev-2)] sm:rounded-2xl"
+            className={cn(
+              'relative z-10 flex w-full flex-col bg-surface',
+              isMobile
+                ? 'min-h-dvh max-h-dvh overflow-hidden touch-pan-y'
+                : 'max-h-[90vh] max-w-md overflow-y-auto rounded-2xl border border-border-app/40 p-4 shadow-[var(--shadow-elev-2)]',
+            )}
             initial="hidden"
             animate="visible"
             exit="exit"
-            variants={sheetVariants}
-            drag={reduceMotion ? false : 'y'}
-            dragControls={dragControls}
-            dragListener={false}
-            dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={{ top: 0, bottom: 0.5 }}
-            onDragEnd={handleDragEnd}
+            variants={panelVariants}
+            {...touchHandlers}
           >
             <div
-              aria-hidden
-              onPointerDown={(e) => dragControls.start(e)}
-              className="mx-auto -mt-1 mb-2 h-1.5 w-10 shrink-0 touch-none rounded-full bg-border-app sm:hidden"
-            />
-            <div className="mb-3 flex items-center justify-between">
-              <h2 id={titleId} className="text-sm font-semibold text-foreground">
-                {title}
-              </h2>
-              <button type="button" onClick={handleClose} aria-label="Close" className="icon-btn -mr-1">
-                <X className="h-5 w-5" />
-              </button>
+              className={cn(
+                'flex shrink-0 items-center gap-1 border-border-app/40',
+                isMobile
+                  ? 'border-b px-2 pb-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))]'
+                  : 'mb-3 justify-between',
+              )}
+            >
+              {isMobile ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    className="icon-btn shrink-0"
+                    aria-label="Go back"
+                  >
+                    <ArrowLeft className="h-[22px] w-[22px]" />
+                  </button>
+                  <h2 id={titleId} className="min-w-0 flex-1 truncate text-base font-semibold text-foreground">
+                    {title}
+                  </h2>
+                </>
+              ) : (
+                <>
+                  <h2 id={titleId} className="text-base font-semibold text-foreground">
+                    {title}
+                  </h2>
+                  <button type="button" onClick={handleClose} aria-label="Close" className="icon-btn -mr-1">
+                    <X className="h-5 w-5" />
+                  </button>
+                </>
+              )}
             </div>
             {description && (
               <p id={descriptionId} className="sr-only">
                 {description}
               </p>
             )}
-            {children}
+            <div
+              className={cn(
+                isMobile && 'flex-1 overflow-y-auto overscroll-contain px-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] pt-3',
+              )}
+            >
+              {children}
+            </div>
           </motion.div>
         </div>
       )}
