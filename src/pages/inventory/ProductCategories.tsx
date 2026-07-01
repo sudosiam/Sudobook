@@ -10,7 +10,7 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Button, Field, Input } from '@/components/common/Field';
 import { EntityActions } from '@/components/common/EntityActions';
 import { FAB } from '@/components/common/FAB';
-import { db, type ProductCategory } from '@/lib/db';
+import { db, activeWhere, type ProductCategory } from '@/lib/db';
 import { createProductCategory, updateProductCategory } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
@@ -72,7 +72,7 @@ function CategoryEditor({
 export default function ProductCategories() {
   const categories = useLiveQuery(() => db.productCategories.toArray());
   const productCounts = useLiveQuery(async () => {
-    const products = await db.products.where('isActive').equals(1).toArray();
+    const products = await activeWhere(db.products).toArray();
     const counts = new Map<string, number>();
     for (const p of products) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
     return counts;

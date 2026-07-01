@@ -13,7 +13,7 @@ import { Button } from '@/components/common/Field';
 import { PaymentModal } from '@/components/common/PaymentModal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { EntityActions } from '@/components/common/EntityActions';
-import { db } from '@/lib/db';
+import { db, activeWhere } from '@/lib/db';
 import { PAYMENT_LABELS } from '@/lib/labels';
 import { payPurchase, voidPurchase } from '@/lib/transactions';
 import { getErrorMessage } from '@/lib/errors';
@@ -26,7 +26,7 @@ export default function PurchaseDetail() {
     () => (purchase?.bankAccountId ? db.bankAccounts.get(purchase.bankAccountId) : undefined),
     [purchase?.bankAccountId],
   );
-  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
+  const banks = useLiveQuery(() => activeWhere(db.bankAccounts).toArray());
   const [payOpen, setPayOpen] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);

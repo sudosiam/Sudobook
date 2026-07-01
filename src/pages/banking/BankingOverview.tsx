@@ -10,7 +10,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Field';
 import { BankAccountForm } from '@/components/forms/BankAccountForm';
-import { db } from '@/lib/db';
+import { db, activeWhere } from '@/lib/db';
 import { getBankBalance } from '@/lib/reports';
 import { addMoney } from '@/lib/money';
 
@@ -18,7 +18,7 @@ export default function BankingOverview() {
   const [addOpen, setAddOpen] = useState(false);
 
   const rows = useLiveQuery(async () => {
-    const banks = await db.bankAccounts.where('isActive').equals(1).toArray();
+    const banks = await activeWhere(db.bankAccounts).toArray();
     await db.bankTransactions.count();
     return Promise.all(banks.map(async (b) => ({ ...b, balance: await getBankBalance(b.id) })));
   });

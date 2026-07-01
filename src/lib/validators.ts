@@ -299,7 +299,7 @@ export const recurringExpenseSchema = z
     amount: positivePaise,
     paidFrom: z.enum(['cash', 'bank']),
     bankAccountId: z.string().optional(),
-    dayOfMonth: z.number().int().min(1).max(28),
+    dayOfMonth: z.coerce.number().int().min(1).max(28),
   })
   .refine((v) => (v.paidFrom === 'bank' ? !!v.bankAccountId : true), {
     message: 'Select a bank account',

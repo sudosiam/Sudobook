@@ -400,6 +400,14 @@ export function onDbOutdated(handler: () => void): () => void {
   return () => window.removeEventListener(DB_OUTDATED_EVENT, handler);
 }
 
+/**
+ * Active rows only. `isActive` is stored as boolean `true` in IndexedDB —
+ * querying with `.equals(1)` matches nothing and hides newly saved records.
+ */
+export function activeWhere<T extends { isActive: boolean }>(table: Table<T, string>) {
+  return table.filter((row) => row.isActive);
+}
+
 /** Current ISO timestamp helper — the ONLY way we generate timestamps. */
 export const now = (): string => new Date().toISOString();
 

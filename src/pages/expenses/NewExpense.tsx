@@ -22,7 +22,7 @@ import { AccountCategorySelect } from '@/components/common/AccountCategorySelect
 
 import { DraftBanner } from '@/components/common/DraftBanner';
 
-import { db } from '@/lib/db';
+import { db, activeWhere } from '@/lib/db';
 
 import { expenseSchema, type ExpenseFormData } from '@/lib/validators';
 
@@ -45,7 +45,7 @@ export default function NewExpense() {
 
   const navigate = useNavigate();
 
-  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
+  const banks = useLiveQuery(() => activeWhere(db.bankAccounts).toArray());
 
   const expenseAccounts = useSelectableExpenseAccounts();
 

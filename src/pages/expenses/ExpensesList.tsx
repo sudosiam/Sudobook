@@ -13,7 +13,7 @@ import { Button } from '@/components/common/Field';
 import { PeriodFilter } from '@/components/common/PeriodFilter';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { RowActionButton } from '@/components/common/EntityActions';
-import { db } from '@/lib/db';
+import { db, activeWhere } from '@/lib/db';
 import { usePeriodStore, periodRange } from '@/store/usePeriodStore';
 import { voidExpense } from '@/lib/transactions';
 import { getErrorMessage } from '@/lib/errors';
@@ -49,7 +49,7 @@ export default function ExpensesList() {
     [range?.start, range?.end, limit],
   );
 
-  const recurring = useLiveQuery(() => db.recurringExpenses.where('isActive').equals(1).toArray());
+  const recurring = useLiveQuery(() => activeWhere(db.recurringExpenses).toArray());
 
   const filtered = (expenses ?? []).filter(
     (e) =>

@@ -301,7 +301,7 @@ export async function voidSale(saleId: string, reason: string): Promise<void> {
 
   await db.transaction(
     'rw',
-    [db.sales, db.products, db.stockMovements, db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.sales, db.products, db.stockMovements, db.bankAccounts, db.bankTransactions, db.journalEntries, db.syncQueue],
     async () => {
       await voidLinkedJournalEntries(saleId, [sale.journalEntryId, sale.cogsEntryId], reason);
 
@@ -587,7 +587,7 @@ export async function voidPurchase(purchaseId: string, reason: string): Promise<
 
   await db.transaction(
     'rw',
-    [db.purchases, db.products, db.stockMovements, db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.purchases, db.products, db.stockMovements, db.bankAccounts, db.bankTransactions, db.journalEntries, db.syncQueue],
     async () => {
       await voidLinkedJournalEntries(purchaseId, [purchase.journalEntryId], reason);
 
@@ -703,7 +703,7 @@ export async function voidExpense(expenseId: string, reason: string): Promise<vo
 
   await db.transaction(
     'rw',
-    [db.expenses, db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.expenses, db.bankAccounts, db.bankTransactions, db.journalEntries, db.syncQueue],
     async () => {
       await voidLinkedJournalEntries(expenseId, [expense.journalEntryId], reason);
       await reverseBankTxnsFor(expenseId);

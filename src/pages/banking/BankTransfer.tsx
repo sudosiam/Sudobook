@@ -4,14 +4,14 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { format } from 'date-fns';
 import { Button, Field, FormDateInput, Input, Select } from '@/components/common/Field';
 import { MoneyInput } from '@/components/common/MoneyInput';
-import { db } from '@/lib/db';
+import { db, activeWhere } from '@/lib/db';
 import { transferSchema, type TransferFormData } from '@/lib/validators';
 import { transferBetweenBanks } from '@/lib/transactions';
 import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export function BankTransferForm({ onDone }: { onDone: () => void }) {
-  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
+  const banks = useLiveQuery(() => activeWhere(db.bankAccounts).toArray());
 
   const {
     register,

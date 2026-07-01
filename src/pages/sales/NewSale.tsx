@@ -12,7 +12,7 @@ import { CustomerNameInput } from '@/components/forms/CustomerNameInput';
 import { MoneyInput } from '@/components/common/MoneyInput';
 import { MoneyDisplay } from '@/components/common/MoneyDisplay';
 import { DraftBanner } from '@/components/common/DraftBanner';
-import { db, type PaymentMethod } from '@/lib/db';
+import { db, activeWhere, type PaymentMethod } from '@/lib/db';
 import { saleSchema, type SaleFormData } from '@/lib/validators';
 import { recordSale } from '@/lib/transactions';
 import { findOrCreateCustomer } from '@/lib/entities';
@@ -38,9 +38,9 @@ function resolveSalePayment(
 
 export default function NewSale() {
   const navigate = useNavigate();
-  const activeProducts = useLiveQuery(() => db.products.where('isActive').equals(1).toArray());
-  const customers = useLiveQuery(() => db.customers.where('isActive').equals(1).toArray());
-  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
+  const activeProducts = useLiveQuery(() => activeWhere(db.products).toArray());
+  const customers = useLiveQuery(() => activeWhere(db.customers).toArray());
+  const banks = useLiveQuery(() => activeWhere(db.bankAccounts).toArray());
 
   const productList = activeProducts ?? [];
 

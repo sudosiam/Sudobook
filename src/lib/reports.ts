@@ -1,4 +1,4 @@
-import { db } from '@/lib/db';
+import { db, activeWhere } from '@/lib/db';
 import { getAllBalances, getRangeBalance, type AccountBalance } from '@/lib/accounting';
 import { CODES, typeForCode } from '@/lib/coa';
 import { addMoney, multiplyMoney, subtractMoney } from '@/lib/money';
@@ -491,7 +491,7 @@ function buildAgingReport(
 /** Receivables aging by customer — buckets based on sale date vs as-of date. */
 export async function getCustomerAging(asOf?: string): Promise<AgingReport> {
   const ref = asOf ? new Date(`${asOf}T00:00:00`) : new Date();
-  const customers = await db.customers.where('isActive').equals(1).toArray();
+  const customers = await activeWhere(db.customers).toArray();
   const rows: AgingRow[] = [];
 
   for (const c of customers) {
@@ -513,7 +513,7 @@ export async function getCustomerAging(asOf?: string): Promise<AgingReport> {
 /** Payables aging by vendor — buckets based on purchase date vs as-of date. */
 export async function getVendorAging(asOf?: string): Promise<AgingReport> {
   const ref = asOf ? new Date(`${asOf}T00:00:00`) : new Date();
-  const vendors = await db.vendors.where('isActive').equals(1).toArray();
+  const vendors = await activeWhere(db.vendors).toArray();
   const rows: AgingRow[] = [];
 
   for (const v of vendors) {
@@ -707,7 +707,7 @@ export interface InventoryValuationReport {
 
 export async function getInventoryValuation(): Promise<InventoryValuationReport> {
   const [products, categories] = await Promise.all([
-    db.products.where('isActive').equals(1).toArray(),
+    activeWhere(db.products).toArray(),
     db.productCategories.toArray(),
   ]);
   const categoryNames = new Map(categories.map((c) => [c.id, c.name]));

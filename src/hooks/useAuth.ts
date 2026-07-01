@@ -16,6 +16,7 @@ export function useAuth() {
     supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return;
       setUser(data.session?.user.id ?? null, data.session?.user.email ?? null);
+      if (data.session) void runSync();
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {

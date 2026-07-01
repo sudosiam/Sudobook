@@ -14,6 +14,9 @@ create policy "own rows" on public.recurring_expenses for all
 grant select, insert, update, delete on public.recurring_expenses to authenticated;
 grant select, insert, update, delete on public.recurring_expenses to service_role;
 
+create index if not exists recurring_expenses_user_updated_idx
+  on public.recurring_expenses (user_id, updated_at);
+
 drop trigger if exists set_updated_at on public.recurring_expenses;
 create trigger set_updated_at before insert or update on public.recurring_expenses
   for each row execute function public.set_updated_at();

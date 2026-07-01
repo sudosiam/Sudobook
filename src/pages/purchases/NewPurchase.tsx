@@ -11,7 +11,7 @@ import { Button, Field, FormDateInput, QtyInput, Select, Textarea } from '@/comp
 import { MoneyInput } from '@/components/common/MoneyInput';
 import { MoneyDisplay } from '@/components/common/MoneyDisplay';
 import { DraftBanner } from '@/components/common/DraftBanner';
-import { db } from '@/lib/db';
+import { db, activeWhere } from '@/lib/db';
 import { purchaseSchema, type PurchaseFormData } from '@/lib/validators';
 import { recordPurchase } from '@/lib/transactions';
 import { addMoney, multiplyMoney } from '@/lib/money';
@@ -25,9 +25,9 @@ function isPurchaseDraftBlank(v: PurchaseFormData): boolean {
 
 export default function NewPurchase() {
   const navigate = useNavigate();
-  const products = useLiveQuery(() => db.products.where('isActive').equals(1).toArray());
-  const vendors = useLiveQuery(() => db.vendors.where('isActive').equals(1).toArray());
-  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
+  const products = useLiveQuery(() => activeWhere(db.products).toArray());
+  const vendors = useLiveQuery(() => activeWhere(db.vendors).toArray());
+  const banks = useLiveQuery(() => activeWhere(db.bankAccounts).toArray());
   const productList = products ?? [];
 
   const {

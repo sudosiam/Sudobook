@@ -63,6 +63,8 @@ export async function enqueueSync(
     status: 'pending',
   };
   await db.syncQueue.add(item);
+  // Push soon after a local save (debounced so burst writes coalesce).
+  scheduleSyncSoon();
 }
 
 export async function pendingSyncCount(): Promise<number> {
@@ -310,11 +312,21 @@ export async function runSync(): Promise<void> {
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let listenersAttached = false;
+let syncSoonTimer: ReturnType<typeof setTimeout> | null = null;
 
 function triggerSync(): void {
   void runSync().catch((err) => {
     console.error('[runSync]', err);
   });
+}
+
+/** Debounced sync after a local write — waits for the Dexie tx to commit. */
+export function scheduleSyncSoon(delayMs = 2000): void {
+  if (syncSoonTimer !== null) clearTimeout(syncSoonTimer);
+  syncSoonTimer = setTimeout(() => {
+    syncSoonTimer = null;
+    triggerSync();
+  }, delayMs);
 }
 
 function handleOnline(): void {
@@ -347,6 +359,10 @@ export function startSyncEngine(): void {
 }
 
 export function stopSyncEngine(): void {
+  if (syncSoonTimer !== null) {
+    clearTimeout(syncSoonTimer);
+    syncSoonTimer = null;
+  }
   if (intervalId !== null) {
     clearInterval(intervalId);
     intervalId = null;

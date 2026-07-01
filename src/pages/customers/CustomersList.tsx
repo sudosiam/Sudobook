@@ -11,7 +11,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { Modal } from '@/components/common/Modal';
 import { FAB } from '@/components/common/FAB';
 import { CustomerForm } from '@/components/forms/CustomerForm';
-import { db, type Customer } from '@/lib/db';
+import { db, activeWhere, type Customer } from '@/lib/db';
 import { getCustomerBalance } from '@/lib/reports';
 
 const PAGE_SIZE = 60;
@@ -42,9 +42,7 @@ export default function CustomersList() {
   }, [location.state]);
 
   const customers = useLiveQuery(() =>
-    db.customers
-      .where('isActive')
-      .equals(1)
+    activeWhere(db.customers)
       .toArray()
       .then((rows) => rows.sort((a, b) => a.name.localeCompare(b.name))),
   );

@@ -62,6 +62,10 @@ const ENTITY_JOURNAL_STORES = [
 
   db.syncQueue,
 
+  db.accounts,
+
+  db.settings,
+
 ] as const;
 
 

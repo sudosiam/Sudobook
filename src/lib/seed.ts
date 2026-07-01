@@ -11,6 +11,10 @@ import {
   CATEGORY_SLUG_MIGRATION,
   migrateCategorySlugIds,
 } from '@/lib/migrations/categorySlugToUuid';
+import {
+  RETRY_FAILED_SYNC_MIGRATION,
+  retryFailedSyncQueue,
+} from '@/lib/migrations/retryFailedSyncQueue';
 
 /** Short random per-device code (e.g. "A3") used to keep document numbers unique across devices. */
 function makeDeviceId(): string {
@@ -103,6 +107,8 @@ export async function seedDatabase(): Promise<void> {
       await db.settings.put(settings);
     },
   );
+
+  await runMigrations();
 }
 
 /**
@@ -136,6 +142,14 @@ export async function runMigrations(): Promise<void> {
 
   if (!done.has(CATEGORY_SLUG_MIGRATION)) {
     await migrateCategorySlugIds();
+  }
+
+  if (!done.has(RETRY_FAILED_SYNC_MIGRATION)) {
+    await retryFailedSyncQueue();
+    const s = await db.settings.get('singleton');
+    const migrations = new Set(s?.migrations ?? []);
+    migrations.add(RETRY_FAILED_SYNC_MIGRATION);
+    await db.settings.update('singleton', { migrations: [...migrations] });
   }
 
   await syncMissingDefaultAccounts();

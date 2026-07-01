@@ -6,7 +6,7 @@ import { format } from 'date-fns';
 import { Button, Field, FormDateInput, Input, Select } from '@/components/common/Field';
 import { MoneyInput } from '@/components/common/MoneyInput';
 import { AccountCategorySelect } from '@/components/common/AccountCategorySelect';
-import { db } from '@/lib/db';
+import { db, activeWhere } from '@/lib/db';
 import { CASH_DRAWER_ID, CODES } from '@/lib/coa';
 import {
   bankEntryReasonsForType,
@@ -25,7 +25,7 @@ import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export function ManualBankEntryForm({ onDone }: { onDone: () => void }) {
-  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
+  const banks = useLiveQuery(() => activeWhere(db.bankAccounts).toArray());
   const expenseAccounts = useSelectableExpenseAccounts();
   const incomeAccounts = useSelectableIncomeAccounts();
 

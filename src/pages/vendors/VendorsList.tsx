@@ -11,7 +11,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { Modal } from '@/components/common/Modal';
 import { FAB } from '@/components/common/FAB';
 import { VendorForm } from '@/components/forms/VendorForm';
-import { db, type Vendor } from '@/lib/db';
+import { db, activeWhere, type Vendor } from '@/lib/db';
 import { getVendorBalance } from '@/lib/reports';
 
 const PAGE_SIZE = 60;
@@ -42,9 +42,7 @@ export default function VendorsList() {
   }, [location.state]);
 
   const vendors = useLiveQuery(() =>
-    db.vendors
-      .where('isActive')
-      .equals(1)
+    activeWhere(db.vendors)
       .toArray()
       .then((rows) => rows.sort((a, b) => a.name.localeCompare(b.name))),
   );

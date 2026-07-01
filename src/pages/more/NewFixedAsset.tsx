@@ -7,7 +7,7 @@ import { TopBar } from '@/components/layout/TopBar';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { Button, Field, FormDateInput, Input, Select } from '@/components/common/Field';
 import { MoneyInput } from '@/components/common/MoneyInput';
-import { db } from '@/lib/db';
+import { db, activeWhere } from '@/lib/db';
 import { fixedAssetPurchaseSchema, type FixedAssetPurchaseFormData } from '@/lib/validators';
 import { recordFixedAssetPurchase } from '@/lib/transactions';
 import { getErrorMessage } from '@/lib/errors';
@@ -15,7 +15,7 @@ import { toast } from '@/store/useToast';
 
 export default function NewFixedAsset() {
   const navigate = useNavigate();
-  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
+  const banks = useLiveQuery(() => activeWhere(db.bankAccounts).toArray());
 
   const {
     register,

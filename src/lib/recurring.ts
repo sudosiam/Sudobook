@@ -1,4 +1,4 @@
-import { db, now, uuid, type RecurringExpense } from '@/lib/db';
+import { db, activeWhere, now, uuid, type RecurringExpense } from '@/lib/db';
 import { recordExpense } from '@/lib/transactions';
 import { enqueueSync } from '@/lib/sync';
 
@@ -101,7 +101,7 @@ export async function postRecurringForMonth(
 /** Post all active recurring expenses due for the current month. */
 export async function postDueRecurringExpenses(): Promise<number> {
   const monthKey = currentMonthKey();
-  const templates = await db.recurringExpenses.where('isActive').equals(1).toArray();
+  const templates = await activeWhere(db.recurringExpenses).toArray();
   let count = 0;
   for (const t of templates) {
     const id = await postRecurringForMonth(t, monthKey);

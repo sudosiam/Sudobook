@@ -12,7 +12,7 @@ import { Modal } from '@/components/common/Modal';
 import { FAB } from '@/components/common/FAB';
 import { ProductForm } from '@/components/forms/ProductForm';
 import { cn } from '@/lib/utils';
-import { db } from '@/lib/db';
+import { db, activeWhere } from '@/lib/db';
 
 const PAGE_SIZE = 60;
 
@@ -30,8 +30,8 @@ export default function ProductsList() {
       window.history.replaceState({}, document.title);
     }
   }, [location.state]);
-  const products = useLiveQuery(() => db.products.where('isActive').equals(1).toArray());
-  const categories = useLiveQuery(() => db.productCategories.where('isActive').equals(1).toArray(), []);
+  const products = useLiveQuery(() => activeWhere(db.products).toArray());
+  const categories = useLiveQuery(() => activeWhere(db.productCategories).toArray(), []);
   const categoryNames = new Map((categories ?? []).map((c) => [c.id, c.name]));
 
   const filtered = (products ?? []).filter(

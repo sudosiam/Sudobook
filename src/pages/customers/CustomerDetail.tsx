@@ -14,7 +14,7 @@ import { Button } from '@/components/common/Field';
 import { PaymentModal } from '@/components/common/PaymentModal';
 import { Modal } from '@/components/common/Modal';
 import { CustomerForm } from '@/components/forms/CustomerForm';
-import { db } from '@/lib/db';
+import { db, activeWhere } from '@/lib/db';
 import { updateCustomer } from '@/lib/entities';
 import { getCustomerBalance } from '@/lib/reports';
 import { receiveSalePayment } from '@/lib/transactions';
@@ -29,7 +29,7 @@ export default function CustomerDetail() {
     () => db.sales.where('customerId').equals(id).reverse().sortBy('date'),
     [id],
   );
-  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
+  const banks = useLiveQuery(() => activeWhere(db.bankAccounts).toArray());
   const balance = useLiveQuery(async () => {
     await db.sales.count();
     return getCustomerBalance(id);

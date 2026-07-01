@@ -14,7 +14,7 @@ import { Button } from '@/components/common/Field';
 import { PaymentModal } from '@/components/common/PaymentModal';
 import { Modal } from '@/components/common/Modal';
 import { VendorForm } from '@/components/forms/VendorForm';
-import { db } from '@/lib/db';
+import { db, activeWhere } from '@/lib/db';
 import { updateVendor } from '@/lib/entities';
 import { getVendorBalance } from '@/lib/reports';
 import { payPurchase } from '@/lib/transactions';
@@ -29,7 +29,7 @@ export default function VendorDetail() {
     () => db.purchases.where('vendorId').equals(id).reverse().sortBy('date'),
     [id],
   );
-  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
+  const banks = useLiveQuery(() => activeWhere(db.bankAccounts).toArray());
   const balance = useLiveQuery(async () => {
     await db.purchases.count();
     return getVendorBalance(id);

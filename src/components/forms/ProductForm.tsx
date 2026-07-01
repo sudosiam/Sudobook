@@ -8,7 +8,7 @@ import { Button, Field, Input, QtyInput, Select } from '@/components/common/Fiel
 import { MoneyInput } from '@/components/common/MoneyInput';
 import { createProduct, updateProduct } from '@/lib/entities';
 import { createProductCategory, previewNextSku } from '@/lib/categories';
-import { db, type Product } from '@/lib/db';
+import { db, activeWhere, type Product } from '@/lib/db';
 import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
@@ -20,7 +20,7 @@ export function ProductForm({
   product?: Product;
 }) {
   const isEdit = !!product;
-  const categories = useLiveQuery(() => db.productCategories.where('isActive').equals(1).toArray(), []);
+  const categories = useLiveQuery(() => activeWhere(db.productCategories).toArray(), []);
 
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCatName, setNewCatName] = useState('');
