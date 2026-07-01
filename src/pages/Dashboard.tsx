@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback } from 'react';
+import { lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
 import { TopBar } from '@/components/layout/TopBar';
@@ -10,14 +10,10 @@ import { Skeleton, SkeletonChartCard, SkeletonStatGrid } from '@/components/comm
 import { PeriodFilter } from '@/components/common/PeriodFilter';
 import { Reveal, RevealItem } from '@/components/common/Reveal';
 import { useFinancials } from '@/hooks/useFinancials';
-import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { useSync } from '@/hooks/useSync';
 import { useAppStore } from '@/store/useAppStore';
 import { usePeriodStore } from '@/store/usePeriodStore';
-import { formatSyncAgo } from '@/lib/display';
 import { getLowStockCount } from '@/lib/reports';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/lib/db';
 
 const NetWorthChart = lazy(async () => {
   const mod = await import('@/components/charts/NetWorthChart');
@@ -33,29 +29,13 @@ export default function Dashboard() {
   const { metrics, series, netWorthSeries } = useFinancials();
   const currentFY = useAppStore((s) => s.currentFY);
   const { mode } = usePeriodStore();
-  const { syncNow } = useSync();
-  const lastSyncAt = useLiveQuery(() => db.settings.get('singleton').then((s) => s?.lastSyncAt ?? null), []);
   const lowStockCount = useLiveQuery(() => getLowStockCount(), [], 0);
-  const syncedAgo = formatSyncAgo(lastSyncAt ?? undefined);
-
-  const onRefresh = useCallback(async () => {
-    await syncNow();
-  }, [syncNow]);
-  const { pulling, pullPx } = usePullToRefresh(onRefresh);
 
   const chartsLoading = series === undefined || netWorthSeries === undefined;
 
   return (
     <>
       <TopBar title="Sudo" right={<PeriodFilter placement="header" />} />
-      {pullPx > 0 && (
-        <div
-          className="pointer-events-none flex justify-center text-xs text-muted"
-          style={{ height: pullPx }}
-        >
-          {pulling ? 'Release to refresh' : 'Pull to refresh'}
-        </div>
-      )}
       <PageContainer>
         {chartsLoading ? (
           <div className="page-stack pb-1">
@@ -66,11 +46,6 @@ export default function Dashboard() {
           </div>
         ) : (
           <Reveal className="page-stack pb-1">
-            {syncedAgo && (
-              <RevealItem>
-                <p className="text-[11px] text-muted">Updated {syncedAgo}</p>
-              </RevealItem>
-            )}
             {mode === 'all' && (
               <RevealItem>
                 <p className="text-xs text-muted">Financial Year {currentFY}</p>

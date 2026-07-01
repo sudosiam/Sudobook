@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db';
 import { runSync } from '@/lib/sync';
@@ -9,6 +9,7 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 export function useSync() {
   const setPendingCount = useSyncStore((s) => s.setPendingCount);
   const setStatus = useSyncStore((s) => s.setStatus);
+  const inFlight = useRef(false);
 
   const pending = useLiveQuery(
     () => db.syncQueue.where('status').equals('pending').count(),
@@ -26,21 +27,20 @@ export function useSync() {
   }, [pending, failed, setPendingCount]);
 
   useEffect(() => {
+    if (useSyncStore.getState().status === 'syncing') return;
     if ((failed ?? 0) > 0) setStatus('error');
-  }, [failed, setStatus]);
+    else if ((pending ?? 0) === 0 && (failed ?? 0) === 0) setStatus('idle');
+  }, [pending, failed, setStatus]);
 
   const syncNow = useCallback(async () => {
-    if (!isSupabaseConfigured) return;
-    setStatus('syncing');
+    if (!isSupabaseConfigured || inFlight.current) return;
+    inFlight.current = true;
     try {
       await runSync({ manualRetry: true });
-      const [pendingCount, failedCount] = await Promise.all([
-        db.syncQueue.where('status').equals('pending').count(),
-        db.syncQueue.where('status').equals('failed').count(),
-      ]);
-      setStatus(pendingCount + failedCount > 0 ? 'error' : 'idle');
     } catch {
       setStatus('error');
+    } finally {
+      inFlight.current = false;
     }
   }, [setStatus]);
 

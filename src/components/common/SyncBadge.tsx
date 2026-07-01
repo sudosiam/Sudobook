@@ -31,14 +31,10 @@ export function SyncBadge({ compact = false }: { compact?: boolean }) {
 
   if (status === 'syncing') {
     return (
-      <button
-        type="button"
-        onClick={() => void syncNow()}
-        className="flex min-h-[32px] items-center gap-1 rounded-lg px-1.5 text-xs text-brand-light"
-      >
+      <span className="flex min-h-[32px] items-center gap-1 rounded-lg px-1.5 text-xs text-brand-light">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-light" />
         Syncing…
-      </button>
+      </span>
     );
   }
 

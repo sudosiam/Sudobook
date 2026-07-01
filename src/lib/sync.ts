@@ -243,6 +243,7 @@ export async function processSyncQueue(): Promise<void> {
       const batch = pending.slice(0, SYNC_BATCH_SIZE);
       if (batch.length === 0) break;
 
+      let madeProgress = false;
       for (const item of batch) {
         if (item.status === 'syncing') {
           await db.syncQueue.update(item.id, { status: 'pending' });
@@ -270,6 +271,7 @@ export async function processSyncQueue(): Promise<void> {
           }
 
           await db.syncQueue.delete(item.id);
+          madeProgress = true;
         } catch (err) {
           const message = syncErrorMessage(err);
           const kind = classifySyncError(err);
@@ -295,10 +297,11 @@ export async function processSyncQueue(): Promise<void> {
           if (kind === 'missing_table') {
             warnMissingTableOnce(item.table);
             await db.syncQueue.update(item.id, { status: 'pending', lastError: message });
-            continue;
+            hadFailure = true;
+            break;
           }
 
-      if (kind === 'permanent' || isInvalidUuidSyncError(err)) {
+          if (kind === 'permanent' || isInvalidUuidSyncError(err)) {
             console.warn('[processSyncQueue] Permanent failure:', item.table, item.recordId, message);
             await db.syncQueue.update(item.id, {
               status: 'failed',
@@ -310,7 +313,7 @@ export async function processSyncQueue(): Promise<void> {
               warnedFailedSync.add(item.id);
               toast.error(`Cloud sync blocked for ${item.table} — see Settings → Cloud Sync`);
             }
-            hadFailure = true;
+            madeProgress = true;
             continue;
           }
 
@@ -330,6 +333,9 @@ export async function processSyncQueue(): Promise<void> {
           hadFailure = true;
         }
       }
+
+      // Avoid spinning forever when every item is skipped (missing table, etc.).
+      if (!madeProgress) break;
     }
 
     if (!hadFailure) {
@@ -507,15 +513,29 @@ export async function ensureSyncReset(): Promise<void> {
 
 let runSyncInFlight: Promise<void> | null = null;
 let runSyncQueued = false;
+/** True when a user-initiated sync should drive the dashboard badge state. */
+let syncUiActive = false;
+
+async function finishSyncUiStatus(): Promise<void> {
+  const blocked = await pendingSyncCount();
+  useSyncStore.getState().setStatus(blocked > 0 ? 'error' : 'idle');
+}
 
 /** Push local queue, then pull remote changes (single-flight with coalescing). */
 export async function runSync(options?: { manualRetry?: boolean }): Promise<void> {
   if (runSyncInFlight) {
+    if (options?.manualRetry) {
+      syncUiActive = true;
+      useSyncStore.getState().setStatus('syncing');
+    }
     runSyncQueued = true;
     return runSyncInFlight;
   }
 
-  const manualRetry = options?.manualRetry ?? false;
+  syncUiActive = options?.manualRetry ?? false;
+  if (syncUiActive) useSyncStore.getState().setStatus('syncing');
+
+  const manualRetry = syncUiActive;
 
   runSyncInFlight = (async () => {
     do {
@@ -538,6 +558,8 @@ export async function runSync(options?: { manualRetry?: boolean }): Promise<void
   try {
     await runSyncInFlight;
   } finally {
+    if (syncUiActive) await finishSyncUiStatus();
+    syncUiActive = false;
     runSyncInFlight = null;
   }
 }
