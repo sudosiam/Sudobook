@@ -266,6 +266,9 @@ export interface SyncQueueItem {
   timestamp: string;
   retryCount: number;
   status: 'pending' | 'syncing' | 'failed';
+  /** Set when the failure is not expected to succeed on retry (RLS, payload size, etc.). */
+  permanentFailure?: boolean;
+  lastError?: string;
 }
 
 export interface AppSettings {

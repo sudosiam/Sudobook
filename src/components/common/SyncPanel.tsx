@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { db } from '@/lib/db';
+import { db, type SyncQueueItem } from '@/lib/db';
 import { Button } from '@/components/common/Field';
 import { useSync } from '@/hooks/useSync';
 import { useOnline } from '@/hooks/useOnline';
 import { useSyncStore } from '@/store/useSyncStore';
 import { useSettings } from '@/hooks/useSettings';
+import { dismissFailedSyncItem } from '@/lib/sync';
 import { verifySupabaseSchema, type SupabaseSchemaStatus } from '@/lib/supabaseSchema';
+import { toast } from '@/store/useToast';
 
 function fmt(iso?: string): string {
   if (!iso) return 'never';
@@ -17,6 +19,11 @@ function fmt(iso?: string): string {
   } catch {
     return iso;
   }
+}
+
+function failedLabel(item: SyncQueueItem): string {
+  const shortId = item.recordId.slice(0, 8);
+  return `${item.table} · ${shortId}…`;
 }
 
 /** Cloud sync status: pending/failed counts, last push/pull, manual trigger. */
@@ -36,6 +43,11 @@ export function SyncPanel({ activeUserId }: { activeUserId: string | null }) {
     [],
     0,
   );
+  const failedItems = useLiveQuery(
+    () => db.syncQueue.where('status').equals('failed').limit(8).toArray(),
+    [],
+    [] as SyncQueueItem[],
+  );
 
   const [schema, setSchema] = useState<SupabaseSchemaStatus | null>(null);
 
@@ -46,6 +58,16 @@ export function SyncPanel({ activeUserId }: { activeUserId: string | null }) {
     }
     void verifySupabaseSchema().then(setSchema);
   }, [activeUserId, status]);
+
+  const dismissOne = async (id: string) => {
+    try {
+      await dismissFailedSyncItem(id);
+      toast.info('Removed from sync queue — record stays on this device only');
+    } catch (err) {
+      console.error('[dismissFailedSyncItem]', err);
+      toast.error('Could not remove item');
+    }
+  };
 
   if (!isSupabaseConfigured) {
     return (
@@ -122,10 +144,39 @@ export function SyncPanel({ activeUserId }: { activeUserId: string | null }) {
         </p>
       )}
 
-      {(failed ?? 0) > 0 && activeUserId && online && (
-        <p className="text-xs text-danger">
-          {failed} item(s) failed to sync. Tap Retry below — your data is safe on this device.
-        </p>
+      {(failed ?? 0) > 0 && activeUserId && (
+        <div className="space-y-2">
+          <p className="text-xs text-danger">
+            Failed uploads — data is safe on this device. Retry or dismiss items that cannot sync.
+          </p>
+          <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border-app">
+            {(failedItems ?? []).map((item) => (
+              <li
+                key={item.id}
+                className="flex min-h-[44px] items-start justify-between gap-2 border-b border-border-app px-3 py-2 last:border-0"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-foreground">{failedLabel(item)}</p>
+                  <p className="line-clamp-2 text-[11px] text-muted">
+                    {item.lastError ?? (item.permanentFailure ? 'Permanent error' : 'Upload failed')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void dismissOne(item.id)}
+                  className="flex min-h-[32px] min-w-[32px] shrink-0 items-center justify-center rounded-lg text-muted active:bg-surface-hover"
+                  title="Stop retrying — keep local only"
+                  aria-label="Dismiss failed sync item"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+          {(failed ?? 0) > (failedItems?.length ?? 0) && (
+            <p className="text-[11px] text-muted">Showing first {failedItems?.length} of {failed}.</p>
+          )}
+        </div>
       )}
 
       <Button

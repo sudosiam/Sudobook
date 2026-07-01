@@ -33,8 +33,12 @@ export function useSync() {
     if (!isSupabaseConfigured) return;
     setStatus('syncing');
     try {
-      await runSync();
-      setStatus('idle');
+      await runSync({ manualRetry: true });
+      const [pendingCount, failedCount] = await Promise.all([
+        db.syncQueue.where('status').equals('pending').count(),
+        db.syncQueue.where('status').equals('failed').count(),
+      ]);
+      setStatus(pendingCount + failedCount > 0 ? 'error' : 'idle');
     } catch {
       setStatus('error');
     }

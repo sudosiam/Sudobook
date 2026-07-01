@@ -10,6 +10,11 @@ import {
 import { toast } from '@/store/useToast';
 import { useSyncStore } from '@/store/useSyncStore';
 import { postDueRecurringExpenses } from '@/lib/recurring';
+import {
+  classifySyncError,
+  isInvalidUuidSyncError,
+  syncErrorMessage,
+} from '@/lib/syncErrors';
 
 export { getSupabaseSchemaStatus, verifySupabaseSchema };
 
@@ -57,23 +62,18 @@ async function refreshSupabaseSchema(force = false): Promise<void> {
 async function hasPendingLocalSync(table: string, recordId: string): Promise<boolean> {
   const item = await db.syncQueue
     .where('status')
-    .anyOf('pending', 'syncing', 'failed')
+    .anyOf('pending', 'syncing')
     .filter((row) => row.table === table && row.recordId === recordId)
     .first();
   return item !== undefined;
 }
 
-/** Postgres 22P02 — record id is not a valid uuid (e.g. legacy category slug). */
-function isInvalidUuidSyncError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const e = err as { code?: string; message?: string };
-  return e.code === '22P02' && (e.message?.includes('uuid') ?? false);
-}
-
-function isRateLimitError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const e = err as { status?: number; message?: string; code?: string };
-  return e.status === 429 || e.code === '429' || /rate limit/i.test(e.message ?? '');
+/** Minimal sanity check before writing pulled JSON into IndexedDB. */
+function validatePulledRecord(rowId: string, data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false;
+  const record = data as Record<string, unknown>;
+  if (typeof record.id === 'string' && record.id !== rowId) return false;
+  return true;
 }
 
 let authFailureNotified = false;
@@ -81,27 +81,33 @@ let authFailureNotified = false;
 /** Refresh session and resolve user id; notify when sync is blocked by auth. */
 async function resolveSyncUserId(): Promise<string | null> {
   if (!supabase) return null;
-  try {
-    await supabase.auth.refreshSession();
-  } catch (err) {
-    console.warn('[resolveSyncUserId] refreshSession', err);
+  const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+  if (refreshErr) {
+    console.warn('[resolveSyncUserId] refreshSession', refreshErr);
   }
-  const { data: auth, error } = await supabase.auth.getUser();
-  if (error || !auth.user) {
-    const blocked = await db.syncQueue.where('status').anyOf('pending', 'failed').count();
-    if (blocked > 0 && !authFailureNotified) {
-      authFailureNotified = true;
-      useSyncStore.getState().setStatus('error');
-      toast.error('Cloud sync paused — sign in again in Settings to upload your data');
+  if (!refreshed.session) {
+    const { data: auth, error } = await supabase.auth.getUser();
+    if (error || !auth.user) {
+      const blocked = await db.syncQueue.where('status').anyOf('pending', 'failed').count();
+      if (blocked > 0 && !authFailureNotified) {
+        authFailureNotified = true;
+        useSyncStore.getState().setStatus('error');
+        toast.error('Cloud sync paused — sign in again in Settings to upload your data');
+      }
+      return null;
     }
-    return null;
+    authFailureNotified = false;
+    return auth.user.id;
   }
   authFailureNotified = false;
-  return auth.user.id;
+  return refreshed.session.user.id;
 }
 
-/** Re-queue transient failed items so manual / periodic sync can retry them. */
-export async function requeueFailedSyncItems(): Promise<number> {
+/**
+ * Re-queue failed items for retry.
+ * @param manual When true (Sync Now), retry all non-uuid failures. When false, skip permanent failures.
+ */
+export async function requeueFailedSyncItems(manual = false): Promise<number> {
   const failed = await db.syncQueue.where('status').equals('failed').toArray();
   if (failed.length === 0) return 0;
 
@@ -109,11 +115,22 @@ export async function requeueFailedSyncItems(): Promise<number> {
   await db.transaction('rw', db.syncQueue, async () => {
     for (const item of failed) {
       if (!UUID_RE.test(item.recordId)) continue;
-      await db.syncQueue.update(item.id, { status: 'pending', retryCount: 0 });
+      if (item.permanentFailure && !manual) continue;
+      await db.syncQueue.update(item.id, {
+        status: 'pending',
+        retryCount: 0,
+        permanentFailure: manual ? false : item.permanentFailure,
+        lastError: undefined,
+      });
       requeued += 1;
     }
   });
   return requeued;
+}
+
+/** Remove a permanently failed queue entry (data stays local only). */
+export async function dismissFailedSyncItem(queueId: string): Promise<void> {
+  await db.syncQueue.delete(queueId);
 }
 
 /** Keep only the newest queue entry per table+recordId. */
@@ -171,6 +188,8 @@ export async function enqueueSync(
       timestamp: now(),
       status: 'pending',
       retryCount: 0,
+      permanentFailure: false,
+      lastError: undefined,
     });
     return;
   }
@@ -252,37 +271,63 @@ export async function processSyncQueue(): Promise<void> {
 
           await db.syncQueue.delete(item.id);
         } catch (err) {
-          if (isRateLimitError(err)) {
-            await db.syncQueue.update(item.id, { status: 'pending' });
+          const message = syncErrorMessage(err);
+          const kind = classifySyncError(err);
+
+          if (kind === 'rate_limit') {
+            await db.syncQueue.update(item.id, { status: 'pending', lastError: message });
             toast.info('Cloud sync slowed — will retry shortly');
             hadFailure = true;
             break;
           }
-          if (isMissingTableError(err)) {
+
+          if (kind === 'auth') {
+            await db.syncQueue.update(item.id, {
+              status: 'pending',
+              lastError: message,
+            });
+            authFailureNotified = false;
+            await resolveSyncUserId();
+            hadFailure = true;
+            break;
+          }
+
+          if (kind === 'missing_table') {
             warnMissingTableOnce(item.table);
-            await db.syncQueue.update(item.id, { status: 'pending' });
-          } else if (isInvalidUuidSyncError(err)) {
-            console.warn('[processSyncQueue] Permanent uuid error — leaving failed:', item.table, item.recordId);
-            await db.syncQueue.update(item.id, { status: 'failed', retryCount: MAX_RETRIES });
+            await db.syncQueue.update(item.id, { status: 'pending', lastError: message });
+            continue;
+          }
+
+      if (kind === 'permanent' || isInvalidUuidSyncError(err)) {
+            console.warn('[processSyncQueue] Permanent failure:', item.table, item.recordId, message);
+            await db.syncQueue.update(item.id, {
+              status: 'failed',
+              retryCount: MAX_RETRIES,
+              permanentFailure: true,
+              lastError: message,
+            });
             if (!warnedFailedSync.has(item.id)) {
               warnedFailedSync.add(item.id);
-              toast.error(`Cloud sync blocked for ${item.table} — contact support or re-save the record`);
+              toast.error(`Cloud sync blocked for ${item.table} — see Settings → Cloud Sync`);
             }
             hadFailure = true;
-          } else {
-            console.error('[processSyncQueue]', item.table, err);
-            const retryCount = item.retryCount + 1;
-            const status = retryCount >= MAX_RETRIES ? 'failed' : 'pending';
-            await db.syncQueue.update(item.id, {
-              status,
-              retryCount,
-            });
-            if (status === 'failed' && !warnedFailedSync.has(item.id)) {
-              warnedFailedSync.add(item.id);
-              toast.error(`Cloud sync failed for ${item.table} — tap Sync Now in Settings to retry`);
-            }
-            hadFailure = true;
+            continue;
           }
+
+          console.error('[processSyncQueue]', item.table, err);
+          const retryCount = item.retryCount + 1;
+          const status = retryCount >= MAX_RETRIES ? 'failed' : 'pending';
+          await db.syncQueue.update(item.id, {
+            status,
+            retryCount,
+            lastError: message,
+            permanentFailure: status === 'failed' ? false : undefined,
+          });
+          if (status === 'failed' && !warnedFailedSync.has(item.id)) {
+            warnedFailedSync.add(item.id);
+            toast.error(`Cloud sync failed for ${item.table} — tap Sync Now in Settings to retry`);
+          }
+          hadFailure = true;
         }
       }
     }
@@ -314,8 +359,7 @@ function shouldApplyRemoteJournal(
   if (!local) return true;
   if (local.status === 'void' && remote.status === 'posted') return false;
   const localStamp = local.updatedAt ?? local.createdAt ?? '';
-  const remoteStamp = remote.updatedAt ?? remote.createdAt ?? remoteUpdatedAt;
-  return remoteStamp >= localStamp;
+  return remoteUpdatedAt >= localStamp;
 }
 
 let pulling = false;
@@ -352,8 +396,10 @@ export async function pullFromSupabase(): Promise<void> {
 
       const table = db.table(local);
       const since = pullByTable[remote] ?? globalSince;
-      let tableWatermark = since ?? '1970-01-01T00:00:00.000Z';
+      const tableBaseline = since ?? '1970-01-01T00:00:00.000Z';
+      let maxAppliedAt = tableBaseline;
       let tableOk = true;
+      let applyErrors = false;
       let page = 0;
 
       while (true) {
@@ -379,39 +425,42 @@ export async function pullFromSupabase(): Promise<void> {
         for (const row of batch) {
           try {
             if (row.deleted_at) {
+              if (await hasPendingLocalSync(remote, row.id)) continue;
               await table.delete(row.id);
-            } else {
-              const record = row.data as Record<string, unknown> & {
-                updatedAt?: string;
-                createdAt?: string;
-              };
-              const localRec = (await table.get(row.id)) as
-                | { updatedAt?: string; createdAt?: string }
-                | undefined;
-              const localStamp = localRec?.updatedAt ?? localRec?.createdAt ?? '';
-              const remoteStamp = record.updatedAt ?? record.createdAt ?? row.updated_at;
+              if (row.updated_at >= maxAppliedAt) maxAppliedAt = row.updated_at;
+              continue;
+            }
 
-              const isJournal = local === 'journalEntries';
-              const applyJournal = isJournal
-                ? shouldApplyRemoteJournal(
-                    localRec as { status?: string; updatedAt?: string; createdAt?: string },
-                    record as { status?: string; updatedAt?: string; createdAt?: string },
-                    row.updated_at,
-                  )
-                : true;
+            if (!validatePulledRecord(row.id, row.data)) {
+              console.error('[pullFromSupabase] invalid data', remote, row.id);
+              applyErrors = true;
+              continue;
+            }
 
-              const pendingLocal = localRec ? await hasPendingLocalSync(remote, row.id) : false;
+            const record = row.data as Record<string, unknown> & {
+              updatedAt?: string;
+              createdAt?: string;
+              status?: string;
+            };
+            const localRec = (await table.get(row.id)) as
+              | { updatedAt?: string; createdAt?: string; status?: string }
+              | undefined;
+            const localStamp = localRec?.updatedAt ?? localRec?.createdAt ?? '';
+            const remoteStamp = row.updated_at;
 
-              if (
-                !pendingLocal &&
-                (!localRec || remoteStamp >= localStamp) &&
-                applyJournal
-              ) {
-                await table.put(record);
-                if (row.updated_at >= tableWatermark) tableWatermark = row.updated_at;
-              }
+            const isJournal = local === 'journalEntries';
+            const applyJournal = isJournal
+              ? shouldApplyRemoteJournal(localRec, record, row.updated_at)
+              : true;
+
+            const pendingLocal = localRec ? await hasPendingLocalSync(remote, row.id) : false;
+
+            if (!pendingLocal && (!localRec || remoteStamp >= localStamp) && applyJournal) {
+              await table.put(record);
+              if (row.updated_at >= maxAppliedAt) maxAppliedAt = row.updated_at;
             }
           } catch (err) {
+            applyErrors = true;
             console.error('[pullFromSupabase] apply', remote, row.id, err);
           }
         }
@@ -420,10 +469,9 @@ export async function pullFromSupabase(): Promise<void> {
         page += 1;
       }
 
-      const tableBaseline = since ?? '1970-01-01T00:00:00.000Z';
-      if (tableOk && tableWatermark > tableBaseline) {
-        pullByTable[remote] = tableWatermark;
-        if (tableWatermark > globalWatermark) globalWatermark = tableWatermark;
+      if (tableOk && !applyErrors && maxAppliedAt > tableBaseline) {
+        pullByTable[remote] = maxAppliedAt;
+        if (maxAppliedAt > globalWatermark) globalWatermark = maxAppliedAt;
         settingsChanged = true;
       }
     }
@@ -461,11 +509,13 @@ let runSyncInFlight: Promise<void> | null = null;
 let runSyncQueued = false;
 
 /** Push local queue, then pull remote changes (single-flight with coalescing). */
-export async function runSync(): Promise<void> {
+export async function runSync(options?: { manualRetry?: boolean }): Promise<void> {
   if (runSyncInFlight) {
     runSyncQueued = true;
     return runSyncInFlight;
   }
+
+  const manualRetry = options?.manualRetry ?? false;
 
   runSyncInFlight = (async () => {
     do {
@@ -474,7 +524,7 @@ export async function runSync(): Promise<void> {
         const userId = await resolveSyncUserId();
         if (userId) await refreshSupabaseSchema();
       }
-      await requeueFailedSyncItems();
+      await requeueFailedSyncItems(manualRetry);
       await processSyncQueue();
       await pullFromSupabase();
       try {

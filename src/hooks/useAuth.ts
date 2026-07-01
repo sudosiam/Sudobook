@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { runSync } from '@/lib/sync';
+import { pendingSyncCount, runSync } from '@/lib/sync';
+import { toast } from '@/store/useToast';
 import { useAppStore } from '@/store/useAppStore';
 
 /** Supabase auth state + actions. No-op friendly when Supabase is absent. */
@@ -44,6 +45,12 @@ export function useAuth() {
 
   const signOut = async () => {
     if (!supabase) return;
+    const queued = await pendingSyncCount();
+    if (queued > 0) {
+      toast.error(
+        `${queued} change(s) not yet in cloud — sign in again with the same account to resume sync`,
+      );
+    }
     await supabase.auth.signOut();
   };
 

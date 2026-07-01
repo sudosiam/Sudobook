@@ -106,6 +106,7 @@ export async function restoreBackup(backup: BackupFile): Promise<void> {
     if (settings) {
       await db.settings.update('singleton', {
         lastPullAt: restoredAt,
+        lastPullAtByTable: undefined,
         lastSyncAt: undefined,
       });
     }
