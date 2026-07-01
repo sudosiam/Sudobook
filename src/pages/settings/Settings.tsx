@@ -19,6 +19,7 @@ import {
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
+import { APP_VERSION } from '@/lib/version';
 
 export default function Settings() {
   const settings = useSettings();
@@ -309,7 +310,9 @@ export default function Settings() {
             </div>
           </section>
 
-          <p className="text-center text-xs text-disabled">Sudo Books v1.0 · Biswajit Power Hub</p>
+          <p className="text-center text-xs text-disabled">
+            Sudo Books v{APP_VERSION} · Biswajit Power Hub
+          </p>
         </div>
       </PageContainer>
 

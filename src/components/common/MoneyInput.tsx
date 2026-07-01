@@ -23,9 +23,11 @@ export function MoneyInput({
   const [text, setText] = useState(value ? String(paiseToRupees(value)) : '');
 
   useEffect(() => {
-    // Keep in sync when the paise value changes externally.
-    const asPaise = toPaise(text || '0');
-    if (asPaise !== value) setText(value ? String(paiseToRupees(value)) : '');
+    // Keep in sync when the paise value changes externally (e.g. auto-fill paid amount).
+    const normalized = value ? String(paiseToRupees(value)) : '';
+    if (toPaise(text || '0') !== value || text !== normalized) {
+      setText(normalized);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 

@@ -158,10 +158,10 @@ export function ProductForm({
       </Field>
 
       <Field label="Category" error={errors.category?.message}>
-        <div className="flex gap-2">
+        <div className="flex min-w-0 gap-2">
           <Select
             {...register('category', { onChange: () => setSkuAuto(!isEdit) })}
-            className="flex-1"
+            className="min-w-0 flex-1"
             pickerTitle="Category"
           >
             {(categories ?? []).map((c) => (

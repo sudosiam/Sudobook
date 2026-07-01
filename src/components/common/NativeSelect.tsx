@@ -131,6 +131,7 @@ export const NativeSelect = forwardRef<HTMLInputElement, NativeSelectProps>(
         <Popover
           open={open}
           onClose={close}
+          className={cn('w-full min-w-0', className)}
           panel={
             <PickerList
               options={options}
@@ -165,10 +166,9 @@ export const NativeSelect = forwardRef<HTMLInputElement, NativeSelectProps>(
             }}
             className={cn(
               triggerBase,
-              'flex items-center justify-between gap-2 text-left',
+              'flex w-full min-w-0 items-center justify-between gap-2 text-left',
               size === 'compact' ? 'min-h-[48px] px-2 py-1 text-xs' : 'min-h-[48px] px-3 py-2 text-sm',
               open && 'border-brand',
-              className,
             )}
           >
             <span className={cn('min-w-0 truncate', !selected && effectiveValue === '' && 'text-disabled')}>

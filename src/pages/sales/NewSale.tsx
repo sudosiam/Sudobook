@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -84,7 +84,13 @@ export default function NewSale() {
   const paidAmount = watch('paidAmount');
   const prevTotalRef = useRef(0);
 
-  const subtotal = useMemo(() => addMoney(...(items ?? []).map((i) => i.total || 0)), [items]);
+  // Do not memoize on `items` — RHF mutates line items in place, so the array
+  // reference stays stable while totals change and useMemo would stay stale.
+  const subtotal = addMoney(
+    ...(items ?? []).map(
+      (i) => i.total || multiplyMoney(i.unitPrice || 0, i.qty || 0),
+    ),
+  );
   const total = Math.max(subtractMoney(subtotal, discount || 0), 0);
   const balanceDue = Math.max(subtractMoney(total, paidAmount || 0), 0);
 
@@ -219,9 +225,10 @@ export default function NewSale() {
             <div className="space-y-3">
               {fields.map((f, i) => (
                 <div key={f.id} className="rounded-lg border border-border-app p-3">
-                  <div className="mb-2 flex items-center gap-2">
+                  <div className="mb-2 flex min-w-0 items-center gap-2">
                     <Select
-                      className="flex-1"
+                      className="min-w-0 flex-1"
+                      pickerTitle="Product"
                       value={items?.[i]?.productId ?? ''}
                       onChange={(e) => {
                         const p = productList.find((x) => x.id === e.target.value);

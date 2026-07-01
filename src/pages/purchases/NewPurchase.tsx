@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -66,7 +66,11 @@ export default function NewPurchase() {
   const { fields, append, remove } = useFieldArray({ control, name: 'items' });
   const items = watch('items');
   const paymentMethod = watch('paymentMethod');
-  const subtotal = useMemo(() => addMoney(...(items ?? []).map((i) => i.total || 0)), [items]);
+  const subtotal = addMoney(
+    ...(items ?? []).map(
+      (i) => i.total || multiplyMoney(i.unitCost || 0, i.qty || 0),
+    ),
+  );
 
   const addItem = () => {
     const p = productList[0];
@@ -165,9 +169,10 @@ export default function NewPurchase() {
             <div className="space-y-3">
               {fields.map((f, i) => (
                 <div key={f.id} className="rounded-lg border border-border-app p-3">
-                  <div className="mb-2 flex items-center gap-2">
+                  <div className="mb-2 flex min-w-0 items-center gap-2">
                     <Select
-                      className="flex-1"
+                      className="min-w-0 flex-1"
+                      pickerTitle="Product"
                       value={items?.[i]?.productId ?? ''}
                       onChange={(e) => {
                         const p = productList.find((x) => x.id === e.target.value);
