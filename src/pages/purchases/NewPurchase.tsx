@@ -1,0 +1,236 @@
+import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useFieldArray, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { Plus, Trash2 } from 'lucide-react';
+import { format } from 'date-fns';
+import { TopBar } from '@/components/layout/TopBar';
+import { PageContainer } from '@/components/layout/PageContainer';
+import { Button, Field, FormDateInput, Input, Select, Textarea } from '@/components/common/Field';
+import { MoneyInput } from '@/components/common/MoneyInput';
+import { MoneyDisplay } from '@/components/common/MoneyDisplay';
+import { db } from '@/lib/db';
+import { purchaseSchema, type PurchaseFormData } from '@/lib/validators';
+import { recordPurchase } from '@/lib/transactions';
+import { addMoney, multiplyMoney } from '@/lib/money';
+import { toast } from '@/store/useToast';
+
+export default function NewPurchase() {
+  const navigate = useNavigate();
+  const products = useLiveQuery(() => db.products.filter((p) => p.isActive).toArray());
+  const vendors = useLiveQuery(() => db.vendors.filter((v) => v.isActive).toArray());
+  const banks = useLiveQuery(() => db.bankAccounts.filter((b) => b.isActive).toArray());
+  const productList = products ?? [];
+
+  const {
+    register,
+    control,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors, isSubmitting },
+  } = useForm<PurchaseFormData>({
+    resolver: zodResolver(purchaseSchema),
+    defaultValues: {
+      date: format(new Date(), 'yyyy-MM-dd'),
+      vendorId: '',
+      vendorName: '',
+      items: [],
+      paymentMethod: 'cash',
+      paidAmount: 0,
+    },
+  });
+
+  const { fields, append, remove } = useFieldArray({ control, name: 'items' });
+  const items = watch('items');
+  const paymentMethod = watch('paymentMethod');
+  const subtotal = useMemo(() => addMoney(...(items ?? []).map((i) => i.total || 0)), [items]);
+
+  const addItem = () => {
+    const p = productList[0];
+    append({
+      productId: p?.id ?? '',
+      productName: p?.name ?? '',
+      qty: 1,
+      unitCost: p?.costPrice ?? 0,
+      total: p?.costPrice ?? 0,
+    });
+  };
+
+  const onSubmit = async (data: PurchaseFormData) => {
+    try {
+      const total = addMoney(...data.items.map((i) => i.total));
+      const paidAmount =
+        data.paymentMethod === 'credit'
+          ? 0
+          : data.paymentMethod === 'partial'
+            ? data.paidAmount
+            : total;
+      const id = await recordPurchase({
+        date: data.date,
+        vendorId: data.vendorId,
+        vendorName: data.vendorName,
+        items: data.items,
+        paymentMethod: data.paymentMethod,
+        bankAccountId: data.bankAccountId || undefined,
+        paidAmount,
+        notes: data.notes,
+      });
+      toast.success('Purchase recorded');
+      navigate(`/purchases/${id}`);
+    } catch (err) {
+      console.error('[NewPurchase]', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to record purchase');
+    }
+  };
+
+  const needsBank = paymentMethod === 'bank' || paymentMethod === 'upi';
+
+  return (
+    <>
+      <TopBar title="New Purchase" />
+      <PageContainer>
+        <form onSubmit={handleSubmit(onSubmit)} className="page-stack">
+          <Field label="Date" error={errors.date?.message}>
+            <FormDateInput name="date" control={control} />
+          </Field>
+
+          <Field label="Vendor" error={errors.vendorId?.message}>
+            <Select
+              {...register('vendorId')}
+              onChange={(e) => {
+                const v = vendors?.find((x) => x.id === e.target.value);
+                setValue('vendorId', e.target.value);
+                if (v) setValue('vendorName', v.name);
+              }}
+            >
+              <option value="">Select vendor</option>
+              {(vendors ?? []).map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          <div className="card">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-foreground">Items</h2>
+              <button type="button" onClick={addItem} className="flex items-center gap-1 text-xs text-brand-light">
+                <Plus className="h-4 w-4" /> Add
+              </button>
+            </div>
+            {productList.length === 0 && (
+              <p className="text-xs text-warning">Add products in Inventory first.</p>
+            )}
+            {errors.items?.message && <p className="mb-2 text-xs text-danger">{errors.items.message}</p>}
+            <div className="space-y-3">
+              {fields.map((f, i) => (
+                <div key={f.id} className="rounded-lg border border-border-app p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Select
+                      className="flex-1"
+                      value={items?.[i]?.productId ?? ''}
+                      onChange={(e) => {
+                        const p = productList.find((x) => x.id === e.target.value);
+                        if (p) {
+                          setValue(`items.${i}.productId`, p.id);
+                          setValue(`items.${i}.productName`, p.name);
+                          setValue(`items.${i}.unitCost`, p.costPrice);
+                          setValue(`items.${i}.total`, multiplyMoney(p.costPrice, items?.[i]?.qty || 1));
+                        }
+                      }}
+                    >
+                      {productList.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.stockQty})
+                        </option>
+                      ))}
+                    </Select>
+                    <button
+                      type="button"
+                      onClick={() => remove(i)}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-danger hover:bg-surface-hover"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label="Qty">
+                      <Input
+                        type="number"
+                        min={1}
+                        value={items?.[i]?.qty ?? 1}
+                        onChange={(e) => {
+                          const qty = Math.max(1, Number(e.target.value) || 1);
+                          setValue(`items.${i}.qty`, qty);
+                          setValue(`items.${i}.total`, multiplyMoney(items?.[i]?.unitCost || 0, qty));
+                        }}
+                      />
+                    </Field>
+                    <Field label="Unit Cost">
+                      <MoneyInput
+                        value={items?.[i]?.unitCost ?? 0}
+                        onChange={(v) => {
+                          setValue(`items.${i}.unitCost`, v);
+                          setValue(`items.${i}.total`, multiplyMoney(v, items?.[i]?.qty || 1));
+                        }}
+                      />
+                    </Field>
+                  </div>
+                  <div className="mt-2 flex justify-end text-xs text-muted">
+                    Line total:{' '}
+                    <MoneyDisplay amount={items?.[i]?.total ?? 0} className="ml-1 text-foreground" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between card text-base font-semibold">
+            <span className="text-foreground">Total</span>
+            <MoneyDisplay amount={subtotal} tone="expense" />
+          </div>
+
+          <Field label="Payment Method" error={errors.paymentMethod?.message}>
+            <Select {...register('paymentMethod')}>
+              <option value="cash">Cash</option>
+              <option value="bank">Bank</option>
+              <option value="upi">UPI</option>
+              <option value="partial">Partial</option>
+              <option value="credit">Credit (unpaid)</option>
+            </Select>
+          </Field>
+
+          {needsBank && (
+            <Field label="Bank Account" error={errors.bankAccountId?.message}>
+              <Select {...register('bankAccountId')}>
+                <option value="">Select account</option>
+                {(banks ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+
+          {paymentMethod === 'partial' && (
+            <Field label="Amount Paid Now" error={errors.paidAmount?.message}>
+              <MoneyInput value={watch('paidAmount')} onChange={(v) => setValue('paidAmount', v)} />
+            </Field>
+          )}
+
+          <Field label="Notes" error={errors.notes?.message}>
+            <Textarea {...register('notes')} placeholder="Optional" />
+          </Field>
+
+          <Button type="submit" disabled={isSubmitting || subtotal <= 0} className="w-full">
+            Record Purchase
+          </Button>
+        </form>
+      </PageContainer>
+    </>
+  );
+}

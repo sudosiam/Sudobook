@@ -1,0 +1,445 @@
+@import 'tailwindcss';
+
+@theme inline {
+  --color-app: var(--c-app-bg);
+  --color-surface: var(--c-surface);
+  --color-surface-hover: var(--c-surface-hover);
+  --color-border-app: var(--c-border);
+  --color-foreground: var(--c-text);
+  --color-muted: var(--c-muted);
+  --color-disabled: var(--c-disabled);
+
+  --color-bg: var(--c-app-bg);
+  --color-brand: var(--c-brand);
+  --color-brand-hover: var(--c-brand-hover);
+  --color-brand-active: var(--c-brand-active);
+  --color-brand-light: var(--c-brand-light);
+  --color-success: var(--c-success);
+  --color-danger: var(--c-danger);
+  --color-danger-hover: var(--c-danger-hover);
+  --color-warning: var(--c-warning);
+
+  /* UI copy — Inter; numbers — Roboto (Android Material, easy to scan) */
+  --font-sans:
+    'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-numeric: Roboto, 'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ---------- Dark theme (default) — Material dark surface ---------- */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --c-app-bg: #0e0e10;
+  --c-surface: #18181b;
+  --c-surface-hover: #222226;
+  --c-border: #2a2a2f;
+  --c-text: #f4f4f5;
+  --c-muted: #9ca3af;
+  --c-disabled: #52525b;
+
+  --c-brand: #3b82f6;
+  --c-brand-hover: #60a5fa;
+  --c-brand-active: #2563eb;
+  --c-brand-light: #93c5fd;
+  --c-success: #4ade80;
+  --c-danger: #f87171;
+  --c-danger-hover: #ef4444;
+  --c-warning: #fbbf24;
+
+  --shadow-elev-1: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-elev-2: 0 4px 12px rgb(0 0 0 / 0.4);
+  --fab-clearance: calc(1.25rem + 3rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* ---------- Light theme — clean premium Android light ---------- */
+[data-theme='light'] {
+  color-scheme: light;
+  --c-app-bg: #f4f4f5;
+  --c-surface: #ffffff;
+  --c-surface-hover: #f4f4f5;
+  --c-border: #e4e4e7;
+  --c-text: #18181b;
+  --c-muted: #71717a;
+  --c-disabled: #a1a1aa;
+
+  --c-brand: #2563eb;
+  --c-brand-hover: #3b82f6;
+  --c-brand-active: #1d4ed8;
+  --c-brand-light: #2563eb;
+  --c-success: #16a34a;
+  --c-danger: #dc2626;
+  --c-danger-hover: #b91c1c;
+  --c-warning: #d97706;
+
+  --shadow-elev-1: 0 1px 3px rgb(24 24 27 / 0.06);
+  --shadow-elev-2: 0 4px 14px rgb(24 24 27 / 0.08);
+  --fab-clearance: calc(1.25rem + 3rem + env(safe-area-inset-bottom, 0px));
+}
+
+html {
+  height: 100%;
+  height: 100dvh;
+}
+
+body,
+#root {
+  min-height: 100%;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  background-color: var(--c-app-bg);
+  color: var(--c-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+/* Clean sans-serif numbers — no monospace clutter */
+.font-numeric,
+.tabular-nums {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.pb-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.375rem);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-border) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--c-border);
+  border-radius: 9999px;
+}
+
+input,
+button,
+select,
+textarea {
+  font-family: inherit;
+}
+
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+button,
+a,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid var(--c-brand);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.scroll-touch {
+  -webkit-overflow-scrolling: touch;
+}
+
+@layer components {
+  .card {
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--c-border) 55%, transparent);
+    background-color: var(--c-surface);
+    padding: 0.75rem;
+    box-shadow: var(--shadow-elev-1);
+  }
+
+  .card-accent {
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--c-brand) 28%, transparent);
+    background-color: color-mix(in srgb, var(--c-brand) 10%, transparent);
+    padding: 0.75rem;
+    box-shadow: var(--shadow-elev-1);
+  }
+
+  .list-shell {
+    overflow: hidden;
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--c-border) 55%, transparent);
+    background-color: var(--c-surface);
+    box-shadow: var(--shadow-elev-1);
+  }
+
+  .list-row {
+    display: flex;
+    min-height: 4rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--c-border) 35%, transparent);
+    padding: 0.625rem 0.75rem;
+  }
+
+  .list-row:last-child {
+    border-bottom: none;
+  }
+
+  .list-row:active {
+    background-color: var(--c-surface-hover);
+  }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--c-muted);
+  }
+
+  .page-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .hero-money {
+    font-family: var(--font-numeric);
+    font-size: 1.25rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  .icon-btn {
+    display: flex;
+    height: 3rem;
+    width: 3rem;
+    min-height: 3rem;
+    min-width: 3rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    color: var(--c-muted);
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .icon-btn:active {
+    background-color: var(--c-surface-hover);
+  }
+
+  /* Inline month chip — PeriodFilter */
+  .period-filter-wrap {
+    display: flex;
+    width: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.375rem 0.5rem;
+    overflow: visible;
+  }
+
+  .period-filter-wrap--header {
+    width: auto;
+    margin-right: 0.625rem;
+  }
+
+  .period-filter {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    min-height: 3rem;
+    margin-left: auto;
+    align-items: stretch;
+    overflow: visible;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in srgb, var(--c-border) 55%, transparent);
+    background-color: var(--c-surface);
+    box-shadow: var(--shadow-elev-1);
+  }
+
+  .period-filter__chev {
+    display: flex;
+    width: 3rem;
+    min-width: 3rem;
+    min-height: 3rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--c-muted);
+    transition: background-color 0.15s ease;
+  }
+
+  .period-filter__chev:active:not(:disabled) {
+    background-color: var(--c-surface-hover);
+  }
+
+  .period-filter__chev:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  .period-filter__month {
+    position: relative;
+    display: flex;
+    min-width: 4.25rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-left: 1px solid color-mix(in srgb, var(--c-border) 40%, transparent);
+    border-right: 1px solid color-mix(in srgb, var(--c-border) 40%, transparent);
+    padding: 0 0.5rem;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--c-text);
+    white-space: nowrap;
+  }
+
+  .period-filter__month--disabled {
+    color: var(--c-muted);
+  }
+
+  .period-filter__all {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    padding: 0 0.5625rem;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--c-muted);
+    transition: background-color 0.15s ease;
+  }
+
+  .period-filter__all:active {
+    background-color: var(--c-surface-hover);
+  }
+
+  .period-filter__all--active {
+    background-color: var(--c-brand);
+    color: #fff;
+  }
+
+  .period-filter__subtitle {
+    flex: 1;
+    min-width: 0;
+    font-size: 10px;
+    line-height: 1.2;
+    color: var(--c-muted);
+  }
+
+  /* Compact variant — TopBar right slot */
+  .period-filter--header {
+    min-height: 2.25rem;
+    margin-left: 0;
+  }
+
+  .period-filter--header .period-filter__chev {
+    width: 3rem;
+    min-width: 3rem;
+    min-height: 3rem;
+  }
+
+  .period-filter--header .period-filter__month {
+    min-width: 3.5rem;
+    padding: 0 0.375rem;
+    font-size: 11px;
+  }
+
+  .period-filter--header .period-filter__all {
+    min-height: 2.25rem;
+    padding: 0 0.4375rem;
+    font-size: 10px;
+  }
+
+  /* Toolbar: period picker + search/filters with consistent spacing */
+  .filter-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    margin-bottom: 0.375rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  nav,
+  header,
+  .no-print,
+  .fixed {
+    display: none !important;
+  }
+
+  .print-page {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+
+  .print-area {
+    color: #000;
+  }
+
+  .print-area * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

@@ -1,0 +1,816 @@
+# SUDO BOOKS PWA — Cursor AI Rules
+# Industrial-Grade Accounting & Finance App for Biswajit Power Hub
+# Stack: React 18 + Vite + TypeScript + Dexie.js + Supabase + Tailwind v4
+# Mobile-First PWA | Local-First | Dark Theme | Solo User
+
+---
+
+## PROJECT IDENTITY
+
+This is "Sudo Books" — a local-first PWA for managing Biswajit Power Hub
+(an EV showroom in Berhampore, West Bengal selling e-scooters, e-rickshaws,
+and lithium batteries). It is NOT an invoicing app and has NO GST features.
+It is a complete accounting, finance, and inventory management system.
+
+Business: Biswajit Power Hub | www.biswajitpowerhub.com
+Owner: Solo user (Biswajit) | Mobile-first | Android PWA primary target
+Currency: Indian Rupee (INR) only | Financial Year: April–March (India)
+
+---
+
+## ABSOLUTE RULES — NEVER VIOLATE THESE
+
+### RULE 1: PAISE-INTEGER ARITHMETIC (IRON LAW)
+
+Every monetary value is stored and computed as INTEGER PAISE (1 ₹ = 100 paise).
+Floating-point money math is FORBIDDEN in this codebase.
+
+```typescript
+// ✅ CORRECT
+const amount: number = 150000; // ₹1,500.00 stored as paise
+const tax = Math.round(amount * 18) / 100; // percentage — round immediately
+const total = amount + tax; // integer + integer = safe
+
+// ❌ NEVER DO THIS
+const amount = 1500.00; // floating point rupees
+const tax = amount * 0.18; // 270.00000000000003
+```
+
+All monetary function parameters and return values MUST be annotated with
+a comment `// paise` so the intent is always clear.
+
+```typescript
+function calculateTotal(items: SaleItem[]): number { // returns paise
+  return items.reduce((sum, item) => sum + item.total, 0); // all paise
+}
+```
+
+Use ONLY these approved money utilities from `src/lib/money.ts`:
+- `toPaise(rupees)` — convert user input to paise
+- `toINR(paise)` — format paise for display as ₹X,XX,XXX.XX
+- `addMoney(...amounts)` — safe integer sum
+- `pct(amount, ratePercent)` — percentage of paise amount
+- `subtractMoney(a, b)` — safe subtraction
+
+NEVER use: `parseFloat`, raw division producing decimals, `toFixed` for
+calculation (only for display), or `*` with a decimal constant without
+`Math.round()` wrapping the entire expression.
+
+---
+
+### RULE 2: DOUBLE-ENTRY ACCOUNTING — EVERY MONEY EVENT POSTS A JOURNAL ENTRY
+
+Every action that moves money MUST call `postJournalEntry()` from
+`src/lib/accounting.ts`. No exceptions. No direct balance field updates.
+Account balances are ALWAYS computed from journal entries, never stored.
+
+```typescript
+// ✅ CORRECT — sale posts a journal entry
+async function recordSale(sale: NewSale) {
+  // 1. Save sale record
+  const saleId = await db.sales.add(sale);
+  // 2. Post journal entry (mandatory)
+  await postJournalEntry({
+    date: sale.date,
+    description: `Sale ${sale.saleNumber}`,
+    entryType: 'sale',
+    linkedId: saleId,
+    lines: [
+      { accountCode: 101, debit: sale.total, credit: 0 }, // Cash DR
+      { accountCode: 401, debit: 0, credit: sale.total }, // Sales CR
+    ]
+  });
+}
+
+// ❌ WRONG — never update balances directly
+await db.accounts.update(cashAccountId, { balance: newBalance });
+```
+
+Journal entries are IMMUTABLE once posted. To reverse a transaction,
+create a new reversing entry. NEVER update or delete a posted journal entry.
+Voided entries get `status: 'void'` only — the record stays forever.
+
+The `postJournalEntry()` function MUST verify:
+- `sum(lines.debit) === sum(lines.credit)` — throws if not balanced
+- All amounts are non-negative integers (paise)
+- At least 2 lines per entry
+
+---
+
+### RULE 3: LOCAL-FIRST — DEXIE IS THE SOURCE OF TRUTH
+
+Always read from Dexie (IndexedDB). NEVER read directly from Supabase
+in component code. Supabase is the cloud backup, not the primary source.
+
+```typescript
+// ✅ CORRECT — read from Dexie
+const sales = await db.sales.where('date').between(start, end).toArray();
+
+// ❌ WRONG — reading from Supabase in a component
+const { data } = await supabase.from('sales').select('*');
+```
+
+All writes go to Dexie first, then queue to SyncQueue for background sync.
+Never await Supabase in a write path — it will block the UI on mobile.
+
+```typescript
+// ✅ CORRECT write pattern
+await db.transaction('rw', db.sales, db.syncQueue, async () => {
+  await db.sales.add(newSale);
+  await db.syncQueue.add({ table: 'sales', operation: 'create', data: newSale, ... });
+});
+```
+
+---
+
+### RULE 4: TYPESCRIPT STRICT MODE — NO `any`
+
+TypeScript `strict: true` is enabled. `any` type is banned. Use proper
+types, generics, or `unknown` + type guards.
+
+```typescript
+// ✅ CORRECT
+function processEntry(entry: JournalEntry): void { ... }
+
+// ❌ WRONG
+function processEntry(entry: any): void { ... }
+```
+
+All Dexie table types must be explicitly defined in `src/lib/db.ts`.
+All Supabase responses must be typed using `Database` generated types.
+
+---
+
+### RULE 5: NO INLINE STYLES — TAILWIND ONLY
+
+All styling via Tailwind CSS utility classes. No `style={{}}` props
+except for dynamic values that cannot be expressed in Tailwind
+(e.g., chart colors, dynamic widths from data).
+
+```tsx
+// ✅ CORRECT
+<div className="bg-[#161616] rounded-xl p-4 border border-[#262626]">
+
+// ❌ WRONG
+<div style={{ backgroundColor: '#161616', padding: '16px' }}>
+```
+
+---
+
+### RULE 6: MOBILE-FIRST ALWAYS
+
+Every component must work on a 390px wide screen first.
+Desktop is a bonus. Write mobile styles first, then `md:` / `lg:` overrides.
+
+```tsx
+// ✅ CORRECT — mobile first
+<div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+
+// ❌ WRONG — desktop first
+<div className="grid grid-cols-3 gap-3 sm:grid-cols-1">
+```
+
+Minimum touch target size: 48×48px. Use `min-h-[48px] min-w-[48px]`.
+All list items minimum 64px tall. Bottom navigation always visible.
+
+---
+
+## TECH STACK — EXACT VERSIONS & IMPORTS
+
+```
+react@18                   react-dom@18
+react-router-dom@6
+dexie@4                    dexie-react-hooks@1
+@supabase/supabase-js@2
+zustand@4
+recharts@2
+react-hook-form@7          @hookform/resolvers@3
+zod@3
+date-fns@3
+lucide-react@0.383
+tailwindcss@4
+vite@5                     @vitejs/plugin-react@4
+vite-plugin-pwa@0.20
+typescript@5
+clsx@2                     tailwind-merge@2
+```
+
+Import conventions:
+```typescript
+// Dexie
+import { db } from '@/lib/db';
+import { useLiveQuery } from 'dexie-react-hooks';
+
+// Supabase (only in sync layer)
+import { supabase } from '@/lib/supabase';
+
+// Money
+import { toPaise, toINR, addMoney, pct } from '@/lib/money';
+
+// Accounting
+import { postJournalEntry } from '@/lib/accounting';
+
+// Icons — always named imports
+import { Plus, ArrowLeft, TrendingUp } from 'lucide-react';
+
+// Date
+import { format, startOfMonth, endOfMonth } from 'date-fns';
+
+// Router
+import { useNavigate, useParams, Link } from 'react-router-dom';
+
+// State
+import { useAppStore } from '@/store/useAppStore';
+```
+
+Path alias `@/` maps to `src/`. Always use `@/` imports, never relative
+paths like `../../lib/db`.
+
+---
+
+## DESIGN SYSTEM
+
+### Color Tokens (use these ONLY)
+
+```
+Background:     bg-[#0a0a0a]       ← app shell, page backgrounds
+Surface:        bg-[#161616]       ← cards, modals, inputs
+Surface hover:  bg-[#1f1f1f]       ← hover states
+Border:         border-[#262626]   ← card borders, dividers
+Border focus:   border-[#0F3D91]   ← focused inputs
+
+Text primary:   text-[#F5F5F5]     ← main content
+Text muted:     text-[#A3A3A3]     ← labels, secondary info
+Text disabled:  text-[#525252]     ← disabled states
+
+Brand blue:     #0F3D91            ← buttons, FAB, active nav, links
+Blue light:     #3B82F6            ← interactive accents, badges
+Success:        text-[#22C55E]     ← income, profits, positive amounts
+Danger:         text-[#EF4444]     ← expenses, losses, overdue, negatives
+Warning:        text-[#F59E0B]     ← pending, partial payment, low stock
+```
+
+### Typography
+
+```tsx
+// Page title
+<h1 className="text-xl font-bold text-[#F5F5F5] tracking-tight">
+
+// Section heading
+<h2 className="text-base font-semibold text-[#F5F5F5]">
+
+// Card label / muted info
+<p className="text-xs text-[#A3A3A3] uppercase tracking-wider">
+
+// Money amounts — always monospace, right-aligned
+<span className="font-mono text-lg font-semibold text-[#22C55E] tabular-nums">
+  {toINR(amount)}
+</span>
+
+// Negative amount
+<span className="font-mono text-lg font-semibold text-[#EF4444] tabular-nums">
+  {toINR(amount)}
+</span>
+```
+
+### Component Patterns
+
+**Standard Card:**
+```tsx
+<div className="bg-[#161616] rounded-xl border border-[#262626] p-4">
+```
+
+**Stat Card (Dashboard):**
+```tsx
+<div className="bg-[#161616] rounded-xl border border-[#262626] p-4 space-y-1">
+  <p className="text-xs text-[#A3A3A3] uppercase tracking-wider">{label}</p>
+  <p className="text-2xl font-bold font-mono text-[#F5F5F5] tabular-nums">
+    {toINR(value)}
+  </p>
+</div>
+```
+
+**List Item (Sale/Expense/Transaction):**
+```tsx
+<div className="flex items-center justify-between py-4 px-4 border-b border-[#262626] min-h-[64px] active:bg-[#1f1f1f]">
+  <div>
+    <p className="text-sm font-medium text-[#F5F5F5]">{primary}</p>
+    <p className="text-xs text-[#A3A3A3] mt-0.5">{secondary}</p>
+  </div>
+  <div className="text-right">
+    <p className="text-sm font-mono font-semibold text-[#22C55E] tabular-nums">{toINR(amount)}</p>
+    <p className="text-xs text-[#A3A3A3] mt-0.5">{date}</p>
+  </div>
+</div>
+```
+
+**Primary Button:**
+```tsx
+<button className="w-full bg-[#0F3D91] hover:bg-[#1a4fa8] active:bg-[#0c3278] text-white font-semibold py-3 px-4 rounded-xl min-h-[48px] transition-colors">
+```
+
+**Floating Action Button (FAB):**
+```tsx
+<button className="fixed bottom-24 right-4 w-14 h-14 bg-[#0F3D91] hover:bg-[#1a4fa8] rounded-full shadow-lg shadow-black/40 flex items-center justify-center z-50 active:scale-95 transition-all">
+  <Plus className="w-6 h-6 text-white" />
+</button>
+```
+
+**Input Field:**
+```tsx
+<input className="w-full bg-[#161616] border border-[#262626] focus:border-[#0F3D91] rounded-xl px-4 py-3 text-[#F5F5F5] text-sm placeholder:text-[#525252] outline-none transition-colors min-h-[48px]" />
+```
+
+**Bottom Navigation (always visible, 5 tabs):**
+```tsx
+<nav className="fixed bottom-0 left-0 right-0 bg-[#0a0a0a] border-t border-[#262626] flex items-center justify-around px-2 pb-safe h-16 z-50">
+```
+
+**Top Bar:**
+```tsx
+<header className="sticky top-0 bg-[#0a0a0a]/90 backdrop-blur border-b border-[#262626] flex items-center justify-between px-4 h-14 z-40">
+  <h1 className="text-base font-semibold text-[#F5F5F5]">{title}</h1>
+  {/* right slot: sync badge, etc. */}
+</header>
+```
+
+**Sync Badge:**
+```tsx
+// Online & synced
+<span className="flex items-center gap-1 text-xs text-[#22C55E]">
+  <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E]" />
+  Synced
+</span>
+// Offline
+<span className="flex items-center gap-1 text-xs text-[#A3A3A3]">
+  <span className="w-1.5 h-1.5 rounded-full bg-[#525252]" />
+  Offline
+</span>
+// Pending sync
+<span className="flex items-center gap-1 text-xs text-[#F59E0B]">
+  <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] animate-pulse" />
+  Pending ({count})
+</span>
+```
+
+---
+
+## FILE STRUCTURE — WHERE THINGS LIVE
+
+```
+src/
+├── lib/
+│   ├── db.ts           ← Dexie schema + db instance (SINGLE EXPORT: db)
+│   ├── supabase.ts     ← Supabase client (SINGLE EXPORT: supabase)
+│   ├── money.ts        ← Paise arithmetic (toPaise, toINR, addMoney, pct)
+│   ├── accounting.ts   ← postJournalEntry(), getAccountBalance()
+│   ├── sync.ts         ← processSyncQueue(), pullFromSupabase()
+│   ├── sequences.ts    ← getNextSaleNumber(), getNextPurchaseNumber()
+│   ├── reports.ts      ← getPnL(), getBalanceSheet(), getCashFlow()
+│   └── validators.ts   ← Zod schemas for all forms
+│
+├── hooks/
+│   ├── useDB.ts        ← Dexie live query wrappers
+│   ├── useSync.ts      ← sync status + manual trigger
+│   ├── useOnline.ts    ← navigator.onLine + events
+│   ├── useSettings.ts  ← app settings from Dexie
+│   └── useFinancials.ts ← dashboard computed metrics
+│
+├── store/
+│   ├── useAppStore.ts  ← UI state, active FY, auth user
+│   └── useSyncStore.ts ← sync status, pending count, last sync
+│
+├── components/
+│   ├── layout/
+│   │   ├── AppShell.tsx
+│   │   ├── BottomNav.tsx
+│   │   ├── TopBar.tsx
+│   │   └── PageContainer.tsx
+│   ├── common/
+│   │   ├── MoneyDisplay.tsx   ← always use this, never raw toINR in JSX
+│   │   ├── MoneyInput.tsx     ← handles paise conversion on change
+│   │   ├── DatePicker.tsx
+│   │   ├── SearchBar.tsx
+│   │   ├── EmptyState.tsx
+│   │   ├── StatCard.tsx
+│   │   ├── SyncBadge.tsx
+│   │   └── ConfirmDialog.tsx
+│   ├── charts/
+│   │   ├── RevenueChart.tsx
+│   │   ├── ExpenseChart.tsx
+│   │   └── NetWorthChart.tsx
+│   └── forms/
+│       ├── LineItemEditor.tsx
+│       ├── CustomerForm.tsx
+│       ├── VendorForm.tsx
+│       ├── ProductForm.tsx
+│       └── BankAccountForm.tsx
+│
+└── pages/
+    ├── Dashboard.tsx
+    ├── sales/
+    ├── purchases/
+    ├── expenses/
+    ├── inventory/
+    ├── customers/
+    ├── vendors/
+    ├── banking/
+    ├── ledger/
+    ├── reports/
+    ├── growth/
+    └── settings/
+```
+
+---
+
+## DATABASE — DEXIE SCHEMA RULES
+
+The canonical schema lives in `src/lib/db.ts`. When adding new tables or
+indexes, ALWAYS increment the Dexie version number and add a migration.
+
+```typescript
+// Pattern for new version
+this.version(2).stores({
+  // copy ALL stores from version 1, then add/change
+  accounts: 'id, code, type, parentCode, isActive',
+  // ... rest of stores
+  newTable: 'id, foreignKey, date' // new table added in v2
+}).upgrade(tx => {
+  // data migration if needed
+});
+```
+
+**ID convention:** All primary keys are UUID strings (`crypto.randomUUID()`).
+Never use auto-increment integers as primary keys (breaks sync).
+
+**Amount convention:** All monetary fields end in a comment `// paise`
+and are typed as `number` (JavaScript integer).
+
+**Timestamp convention:** All timestamps are ISO 8601 strings (`new Date().toISOString()`).
+Never store Date objects. Store dates as `"2024-03-15"` (YYYY-MM-DD strings).
+
+**Soft deletes:** Nothing is hard-deleted. Use `isActive: false` for accounts/
+products. Use `status: 'void'` for journal entries. Use `deletedAt: string | null`
+for sync-relevant records.
+
+---
+
+## ACCOUNTING — CHART OF ACCOUNTS
+
+Account codes follow this hierarchy. Never create accounts outside these ranges:
+
+```
+100–199  ASSETS        (debit-normal: debit increases, credit decreases)
+  101    Cash in Hand
+  102    Bank Accounts (parent for sub-accounts like 102a, 102b)
+  103    Accounts Receivable
+  104    Inventory
+  105    Fixed Assets
+
+200–299  LIABILITIES   (credit-normal: credit increases, debit decreases)
+  201    Accounts Payable
+  202    Loans
+
+300–399  EQUITY        (credit-normal)
+  301    Owner's Capital
+  302    Retained Earnings
+
+400–499  INCOME        (credit-normal)
+  401    Product Sales
+  402    Other Income
+
+500–599  EXPENSES      (debit-normal)
+  501    Cost of Goods Sold (COGS)
+  502    Rent
+  503    Salaries
+  504    Electricity
+  505    Marketing
+  506    Bank Charges
+  507    Miscellaneous
+```
+
+When generating financial reports:
+- Revenue = SUM of credits to 400–499 accounts
+- COGS = SUM of debits to 501
+- Gross Profit = Revenue − COGS
+- Operating Expenses = SUM of debits to 502–599
+- Net Profit = Gross Profit − Operating Expenses
+- Total Assets = SUM of debit balances in 100–199
+- Total Liabilities = SUM of credit balances in 200–299
+- Net Worth = Total Assets − Total Liabilities
+
+---
+
+## SYNC ENGINE — SUPABASE RULES
+
+The `processSyncQueue()` function in `src/lib/sync.ts` is the ONLY place
+that talks to Supabase for writes. It runs:
+- On app load (if online)
+- When `navigator.onLine` fires 'online' event
+- Every 30 seconds via setInterval (if online)
+- When user manually taps "Sync Now"
+
+```typescript
+// Correct sync queue entry creation (always inside Dexie transaction)
+await db.syncQueue.add({
+  id: crypto.randomUUID(),
+  table: 'sales',
+  operation: 'create', // 'create' | 'update' | 'delete'
+  recordId: sale.id,
+  data: sale,
+  timestamp: new Date().toISOString(),
+  retryCount: 0,
+  status: 'pending'
+});
+```
+
+Max retries: 3. After 3 failures, mark as 'failed' and show user an alert.
+
+For pull sync (Supabase → Dexie), use `updated_at` timestamp comparison.
+Only pull records newer than `settings.lastSyncAt`.
+
+All Supabase tables have RLS enabled. Every row has `user_id` matching
+`supabase.auth.user().id`. The app MUST be authenticated to sync.
+
+---
+
+## ROUTING STRUCTURE
+
+```typescript
+// App.tsx routes
+<Routes>
+  <Route path="/" element={<Dashboard />} />
+  <Route path="/sales" element={<SalesList />} />
+  <Route path="/sales/new" element={<NewSale />} />
+  <Route path="/sales/:id" element={<SaleDetail />} />
+  <Route path="/purchases" element={<PurchasesList />} />
+  <Route path="/purchases/new" element={<NewPurchase />} />
+  <Route path="/purchases/:id" element={<PurchaseDetail />} />
+  <Route path="/expenses" element={<ExpensesList />} />
+  <Route path="/expenses/new" element={<NewExpense />} />
+  <Route path="/inventory" element={<ProductsList />} />
+  <Route path="/inventory/:id" element={<ProductDetail />} />
+  <Route path="/customers" element={<CustomersList />} />
+  <Route path="/customers/:id" element={<CustomerDetail />} />
+  <Route path="/vendors" element={<VendorsList />} />
+  <Route path="/vendors/:id" element={<VendorDetail />} />
+  <Route path="/banking" element={<BankingOverview />} />
+  <Route path="/banking/:id" element={<BankDetail />} />
+  <Route path="/ledger" element={<GeneralLedger />} />
+  <Route path="/reports" element={<ReportsHub />} />
+  <Route path="/reports/pnl" element={<ProfitLoss />} />
+  <Route path="/reports/balance-sheet" element={<BalanceSheet />} />
+  <Route path="/reports/cashflow" element={<CashFlow />} />
+  <Route path="/growth" element={<Growth />} />
+  <Route path="/settings" element={<Settings />} />
+</Routes>
+```
+
+Bottom nav destinations (5):
+- `/` — Dashboard (Home icon)
+- `/sales` — Sales (ShoppingBag icon)
+- `/banking` — Banking (Wallet icon)
+- `/reports` — Reports (BarChart2 icon)
+- `/settings` — More / Settings (Menu icon)
+
+---
+
+## FORM HANDLING — REACT HOOK FORM + ZOD
+
+Always use React Hook Form with Zod resolver. Never use uncontrolled forms
+or manual `useState` per field for form data.
+
+```typescript
+// Zod schema in src/lib/validators.ts
+export const saleSchema = z.object({
+  date: z.string().min(1, 'Date required'),
+  customerId: z.string().optional(),
+  customerName: z.string().min(1, 'Customer name required'),
+  items: z.array(saleItemSchema).min(1, 'At least one item required'),
+  discount: z.number().int().min(0), // paise
+  paymentMethod: z.enum(['cash', 'bank', 'upi', 'partial', 'credit']),
+  bankAccountId: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+// In component
+const form = useForm<SaleFormData>({
+  resolver: zodResolver(saleSchema),
+  defaultValues: { date: format(new Date(), 'yyyy-MM-dd'), items: [], discount: 0 }
+});
+```
+
+MoneyInput component handles the paise↔rupees conversion internally:
+```typescript
+// User sees "1500.00", internal value is 150000 (paise)
+<MoneyInput
+  value={field.value}        // paise
+  onChange={field.onChange}  // receives paise
+  placeholder="0.00"
+/>
+```
+
+---
+
+## SEQUENCE NUMBERS (Auto-Numbering)
+
+Sale numbers: `SALE-2024-001`, `SALE-2024-002`, ...
+Purchase numbers: `PUR-2024-001`, ...
+Expense numbers: `EXP-2024-001`, ...
+
+Year in sequence is the financial year start year.
+Counter resets to 001 every April 1st (FY start).
+Counter stored in `settings` table in Dexie. Always increment atomically
+inside a Dexie transaction.
+
+```typescript
+// src/lib/sequences.ts
+export async function getNextSaleNumber(): Promise<string> {
+  const settings = await db.settings.get('singleton');
+  const fy = getCurrentFYYear(); // e.g., "2024"
+  const next = (settings!.saleSequence || 0) + 1;
+  await db.settings.update('singleton', { saleSequence: next });
+  return `SALE-${fy}-${String(next).padStart(3, '0')}`;
+}
+```
+
+---
+
+## ERROR HANDLING PATTERNS
+
+```typescript
+// Async operations in components — always try/catch, always show toast
+async function handleSubmit(data: FormData) {
+  try {
+    setLoading(true);
+    await recordSale(data);
+    toast.success('Sale recorded');
+    navigate('/sales');
+  } catch (err) {
+    console.error('[handleSubmit]', err);
+    toast.error(err instanceof Error ? err.message : 'Something went wrong');
+  } finally {
+    setLoading(false);
+  }
+}
+
+// Dexie queries — wrap in try/catch, return empty array on failure
+async function getSales(start: string, end: string): Promise<Sale[]> {
+  try {
+    return await db.sales.where('date').between(start, end).toArray();
+  } catch (err) {
+    console.error('[getSales]', err);
+    return [];
+  }
+}
+```
+
+Never swallow errors silently. Always log with a `[functionName]` prefix.
+
+---
+
+## RECHARTS USAGE
+
+Charts use dark theme. Always pass explicit colors matching the design system.
+Chart container must have `width="100%"` and explicit height.
+
+```tsx
+// Revenue bar chart — standard pattern
+<ResponsiveContainer width="100%" height={200}>
+  <BarChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+    <XAxis
+      dataKey="month"
+      tick={{ fill: '#A3A3A3', fontSize: 11 }}
+      axisLine={false}
+      tickLine={false}
+    />
+    <YAxis hide />
+    <Tooltip
+      contentStyle={{ background: '#161616', border: '1px solid #262626', borderRadius: 8 }}
+      labelStyle={{ color: '#F5F5F5' }}
+      formatter={(value: number) => [toINR(value), 'Revenue']}
+    />
+    <Bar dataKey="revenue" fill="#0F3D91" radius={[4, 4, 0, 0]} />
+  </BarChart>
+</ResponsiveContainer>
+```
+
+---
+
+## ZUSTAND STORE PATTERNS
+
+```typescript
+// src/store/useAppStore.ts
+interface AppState {
+  currentFY: string;        // "2024-25"
+  activeUserId: string | null;
+  isAuthLoading: boolean;
+  setUser: (id: string | null) => void;
+}
+
+export const useAppStore = create<AppState>((set) => ({
+  currentFY: getCurrentFY(),
+  activeUserId: null,
+  isAuthLoading: true,
+  setUser: (id) => set({ activeUserId: id, isAuthLoading: false }),
+}));
+
+// src/store/useSyncStore.ts
+interface SyncState {
+  status: 'idle' | 'syncing' | 'error';
+  pendingCount: number;
+  lastSyncAt: string | null;
+  isOnline: boolean;
+  setSyncing: (v: boolean) => void;
+  setPendingCount: (n: number) => void;
+  setOnline: (v: boolean) => void;
+  setLastSync: (ts: string) => void;
+}
+```
+
+---
+
+## PWA RULES
+
+Service worker registered via `vite-plugin-pwa`. Use Workbox `NetworkFirst`
+for Supabase API calls, `CacheFirst` for static assets.
+
+Manifest settings:
+```json
+{
+  "name": "Sudo Books",
+  "short_name": "SudoBooks",
+  "theme_color": "#0F3D91",
+  "background_color": "#0a0a0a",
+  "display": "standalone",
+  "orientation": "portrait"
+}
+```
+
+The app MUST be fully functional offline. Test every feature with Chrome
+DevTools → Network → Offline before considering it complete.
+
+`pb-safe` class for bottom padding respects iOS home indicator:
+```css
+/* In globals.css */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 16px); }
+```
+
+---
+
+## PERFORMANCE RULES
+
+- Use `useLiveQuery` from dexie-react-hooks for reactive data. It auto-updates
+  when the underlying IndexedDB data changes.
+- Never load more than 100 records in a list without pagination.
+- Use `db.table.where(index).between(start, end)` — always use indexes.
+- Memoize expensive report calculations with `useMemo`.
+- Lazy-load page components with `React.lazy()` + `Suspense`.
+
+```typescript
+// Correct: paginated list
+const [page, setPage] = useState(0);
+const PAGE_SIZE = 50;
+const sales = useLiveQuery(
+  () => db.sales.orderBy('date').reverse().offset(page * PAGE_SIZE).limit(PAGE_SIZE).toArray(),
+  [page]
+);
+```
+
+---
+
+## WHAT THIS APP IS NOT
+
+- ❌ NOT an invoicing app (no invoice PDF generation needed)
+- ❌ NOT a GST filing tool (no GST calculations, no GSTIN)
+- ❌ NOT a multi-user app (single owner, single login)
+- ❌ NOT a POS system (no barcode scanning)
+- ❌ NOT an e-commerce platform
+
+---
+
+## WHAT THIS APP IS
+
+- ✅ Complete double-entry accounting system
+- ✅ Inventory management (EV products)
+- ✅ Accounts receivable + payable
+- ✅ Multi-bank account management
+- ✅ P&L, Balance Sheet, Cash Flow reports
+- ✅ Business growth analytics
+- ✅ Offline-first PWA (works without internet)
+- ✅ Supabase cloud backup + sync
+
+---
+
+## WHEN CURSOR GENERATES CODE
+
+1. ALL monetary values → integers (paise). No exceptions.
+2. ALL money math → use functions from `src/lib/money.ts`
+3. ALL financial transactions → call `postJournalEntry()`
+4. ALL data reads → Dexie, not Supabase
+5. ALL writes → Dexie first, then SyncQueue
+6. ALL components → dark theme, Tailwind only, mobile-first
+7. ALL amounts displayed → wrapped in `<MoneyDisplay>` component or `toINR()`
+8. ALL IDs → `crypto.randomUUID()`, never auto-increment
+9. ALL timestamps → `new Date().toISOString()`, never Date objects
+10. ALL forms → React Hook Form + Zod, never raw useState per field
