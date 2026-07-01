@@ -15,14 +15,13 @@ import {
   isInvalidUuidSyncError,
   syncErrorMessage,
 } from '@/lib/syncErrors';
+import { isValidSyncRecordId } from '@/lib/syncIds';
 
 export { getSupabaseSchemaStatus, verifySupabaseSchema };
 
 const MAX_RETRIES = 3;
 const SYNC_BATCH_SIZE = 100;
 const PULL_PAGE_SIZE = 500;
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const warnedFailedSync = new Set<string>();
 const LOCAL_BY_REMOTE = new Map(SYNC_TABLE_MAP.map((t) => [t.remote, t.local]));
@@ -114,7 +113,7 @@ export async function requeueFailedSyncItems(manual = false): Promise<number> {
   let requeued = 0;
   await db.transaction('rw', db.syncQueue, async () => {
     for (const item of failed) {
-      if (!UUID_RE.test(item.recordId)) continue;
+      if (!isValidSyncRecordId(item.recordId)) continue;
       if (item.permanentFailure && !manual) continue;
       await db.syncQueue.update(item.id, {
         status: 'pending',
@@ -175,6 +174,10 @@ export async function enqueueSync(
   recordId: string,
   data: unknown,
 ): Promise<void> {
+  if (!isValidSyncRecordId(recordId)) {
+    console.error('[enqueueSync] Invalid recordId — not queued for Supabase:', table, recordId);
+    return;
+  }
   const existing = await db.syncQueue
     .where('status')
     .anyOf('pending', 'failed', 'syncing')

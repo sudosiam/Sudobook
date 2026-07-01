@@ -1,13 +1,11 @@
 import { db, now, type ProductCategory } from '@/lib/db';
 import { DEFAULT_CATEGORIES } from '@/lib/categories';
 import { enqueueSync } from '@/lib/sync';
+import { isValidSyncRecordId } from '@/lib/syncIds';
 
 export const CATEGORY_SLUG_MIGRATION = 'category-slug-to-uuid-v1';
 
 const LEGACY_SLUGS = ['escooter', 'erickshaw', 'battery', 'part', 'other'] as const;
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Default categories originally used slug ids ('escooter', …) so existing
@@ -72,7 +70,7 @@ export async function migrateCategorySlugIds(): Promise<void> {
       // Drop sync-queue rows that can never succeed (non-uuid category ids).
       const catQueue = await db.syncQueue.filter((i) => i.table === 'product_categories').toArray();
       for (const item of catQueue) {
-        if (!UUID_RE.test(item.recordId) || LEGACY_SLUGS.includes(item.recordId as (typeof LEGACY_SLUGS)[number])) {
+        if (!isValidSyncRecordId(item.recordId) || LEGACY_SLUGS.includes(item.recordId as (typeof LEGACY_SLUGS)[number])) {
           await db.syncQueue.delete(item.id);
         }
       }

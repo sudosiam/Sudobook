@@ -1,6 +1,6 @@
 import { db, now, type Account, type AppSettings, type BankAccount } from '@/lib/db';
 import { DEFAULT_ACCOUNTS, CODES, accountUuid, CASH_DRAWER_ID } from '@/lib/coa';
-import { syncDefaultCategories } from '@/lib/categories';
+import { syncDefaultCategories, DEFAULT_CATEGORIES } from '@/lib/categories';
 import { getCurrentFY } from '@/lib/sequences';
 import { enqueueSync } from '@/lib/sync';
 import { invalidateCodeToIdMap } from '@/lib/transactions';
@@ -16,6 +16,11 @@ import {
   CATEGORY_UUID_HEX_MIGRATION,
   migrateCategoryUuidHexFix,
 } from '@/lib/migrations/categoryUuidHexFix';
+import {
+  SCRUB_INVALID_SYNC_IDS_MIGRATION,
+  scrubInvalidSyncRecordIds,
+} from '@/lib/migrations/scrubInvalidSyncRecordIds';
+import { assertBuiltInSyncIds } from '@/lib/syncIds';
 import {
   RETRY_FAILED_SYNC_MIGRATION,
   retryFailedSyncQueue,
@@ -155,6 +160,10 @@ export async function runMigrations(): Promise<void> {
     await migrateCategoryUuidHexFix();
   }
 
+  if (!done.has(SCRUB_INVALID_SYNC_IDS_MIGRATION)) {
+    await scrubInvalidSyncRecordIds();
+  }
+
   if (!done.has(RETRY_FAILED_SYNC_MIGRATION)) {
     await retryFailedSyncQueue();
     const s = await db.settings.get('singleton');
@@ -173,6 +182,15 @@ export async function runMigrations(): Promise<void> {
 
   await syncMissingDefaultAccounts();
   await syncDefaultCategories();
+  assertBuiltInSyncIds(
+    DEFAULT_ACCOUNTS.map((a) => accountUuid(a.code)),
+    'account',
+  );
+  assertBuiltInSyncIds(
+    DEFAULT_CATEGORIES.map((c) => c.id),
+    'product category',
+  );
+  assertBuiltInSyncIds([CASH_DRAWER_ID], 'cash drawer');
   invalidateCodeToIdMap();
 }
 
