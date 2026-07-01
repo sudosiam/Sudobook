@@ -31,13 +31,28 @@ function warnMissingTableOnce(table: string): void {
 }
 
 /** Probe all mirror tables via supabase-js and refresh the skip-list. */
-async function refreshSupabaseSchema(): Promise<void> {
+let schemaCheckedAt = 0;
+const SCHEMA_CACHE_MS = 5 * 60 * 1000;
+
+async function refreshSupabaseSchema(force = false): Promise<void> {
+  if (!force && Date.now() - schemaCheckedAt < SCHEMA_CACHE_MS) return;
   const status = await verifySupabaseSchema();
+  schemaCheckedAt = Date.now();
   const missingSet = new Set(status.missing);
   for (const { remote } of SYNC_TABLE_MAP) {
     if (missingSet.has(remote)) warnMissingTableOnce(remote);
     else missingRemoteTables.delete(remote);
   }
+}
+
+/** True when a local change is still waiting to push — pull must not overwrite it. */
+async function hasPendingLocalSync(table: string, recordId: string): Promise<boolean> {
+  const item = await db.syncQueue
+    .where('status')
+    .anyOf('pending', 'syncing', 'failed')
+    .filter((row) => row.table === table && row.recordId === recordId)
+    .first();
+  return item !== undefined;
 }
 
 /** Postgres 22P02 — record id is not a valid uuid (e.g. legacy category slug). */
@@ -97,18 +112,15 @@ export async function processSyncQueue(): Promise<void> {
     if (!userId) return;
 
     // Recover items orphaned in 'syncing' by a previously interrupted run.
-    const stuck = await db.syncQueue.where('status').equals('syncing').toArray();
-    for (const s of stuck) await db.syncQueue.update(s.id, { status: 'pending' });
-
-    // Process pending AND failed: failures during transient outages (network,
-    // auth not ready, missing grants) must self-heal on later runs instead of
-    // being stuck forever once retryCount hit the cap.
     const pending = await db.syncQueue
       .where('status')
-      .anyOf('pending', 'failed')
+      .anyOf('pending', 'failed', 'syncing')
       .sortBy('timestamp');
     let hadFailure = false;
     for (const item of pending) {
+      if (item.status === 'syncing') {
+        await db.syncQueue.update(item.id, { status: 'pending' });
+      }
       if (missingRemoteTables.has(item.table)) continue;
 
       try {
@@ -143,9 +155,13 @@ export async function processSyncQueue(): Promise<void> {
           // Keep queued — will sync once migrations are applied and the app reloads.
           await db.syncQueue.update(item.id, { status: 'pending' });
         } else if (isInvalidUuidSyncError(err)) {
-          // Permanent — drop so it never retries (migration re-queues with valid ids).
-          console.warn('[processSyncQueue] Dropping invalid uuid sync item:', item.table, item.recordId);
-          await db.syncQueue.delete(item.id);
+          console.warn('[processSyncQueue] Permanent uuid error — leaving failed:', item.table, item.recordId);
+          await db.syncQueue.update(item.id, { status: 'failed', retryCount: MAX_RETRIES });
+          if (!warnedFailedSync.has(item.id)) {
+            warnedFailedSync.add(item.id);
+            toast.error(`Cloud sync blocked for ${item.table} — contact support or re-save the record`);
+          }
+          hadFailure = true;
         } else {
           console.error('[processSyncQueue]', item.table, err);
           const retryCount = item.retryCount + 1;
@@ -264,7 +280,13 @@ export async function pullFromSupabase(): Promise<void> {
                 )
               : true;
 
-            if ((!localRec || remoteStamp >= localStamp) && applyJournal) {
+            const pendingLocal = localRec ? await hasPendingLocalSync(remote, row.id) : false;
+
+            if (
+              !pendingLocal &&
+              (!localRec || remoteStamp >= localStamp) &&
+              applyJournal
+            ) {
               await table.put(record);
               if (row.updated_at > watermark) watermark = row.updated_at;
             }
@@ -339,6 +361,7 @@ export async function runSync(): Promise<void> {
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let listenersAttached = false;
 let syncSoonTimer: ReturnType<typeof setTimeout> | null = null;
+let engineStarted = false;
 
 function triggerSync(): void {
   void runSync().catch((err) => {
@@ -370,7 +393,10 @@ function handleVisibilityChange(): void {
 /** Start periodic + event-driven sync. Idempotent. */
 export function startSyncEngine(): void {
   if (!isSupabaseConfigured) return;
-  triggerSync();
+  if (!engineStarted) {
+    engineStarted = true;
+    triggerSync();
+  }
   if (intervalId === null) {
     intervalId = setInterval(() => triggerSync(), 30_000);
   }
@@ -385,6 +411,7 @@ export function startSyncEngine(): void {
 }
 
 export function stopSyncEngine(): void {
+  engineStarted = false;
   if (syncSoonTimer !== null) {
     clearTimeout(syncSoonTimer);
     syncSoonTimer = null;

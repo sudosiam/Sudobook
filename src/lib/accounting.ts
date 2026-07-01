@@ -39,6 +39,49 @@ function assertBalanced(lines: JournalLine[]): void {
 }
 
 /**
+ * Stream posted journal lines without loading the full table into memory.
+ * Uses the `date` index when a range or cutoff is provided.
+ */
+export async function foldPostedJournalLines(
+  filter: { upToDate?: string; start?: string; end?: string },
+  onLine: (accountCode: number, debit: number, credit: number) => void,
+): Promise<void> {
+  const ingest = (entry: JournalEntry) => {
+    if (entry.status !== 'posted') return;
+    if (filter.upToDate && entry.date > filter.upToDate) return;
+    if (filter.start && entry.date < filter.start) return;
+    if (filter.end && entry.date > filter.end) return;
+    for (const l of entry.lines) {
+      onLine(l.accountCode, l.debit, l.credit);
+    }
+  };
+
+  if (filter.start !== undefined && filter.end !== undefined) {
+    await db.journalEntries.where('date').between(filter.start, filter.end, true, true).each(ingest);
+  } else if (filter.upToDate) {
+    await db.journalEntries.where('date').belowOrEqual(filter.upToDate).each(ingest);
+  } else {
+    await db.journalEntries.where('status').equals('posted').each(ingest);
+  }
+}
+
+function balancesFromMaps(
+  debits: Map<number, number>,
+  credits: Map<number, number>,
+): Map<number, AccountBalance> {
+  const result = new Map<number, AccountBalance>();
+  const codes = new Set<number>([...debits.keys(), ...credits.keys()]);
+  for (const code of codes) {
+    const debit = debits.get(code) ?? 0;
+    const credit = credits.get(code) ?? 0;
+    const type = typeForCode(code);
+    const normalDebit = type === 'asset' || type === 'expense';
+    result.set(code, { debit, credit, balance: normalDebit ? debit - credit : credit - debit });
+  }
+  return result;
+}
+
+/**
  * Post a journal entry — caller MUST already be inside a Dexie rw transaction
  * that includes journalEntries and syncQueue.
  */
@@ -101,18 +144,14 @@ export async function getAccountBalance(
   code: number,
   upToDate?: string,
 ): Promise<AccountBalance> {
-  const entries = await db.journalEntries.where('status').equals('posted').toArray();
   let debit = 0;
   let credit = 0;
-  for (const e of entries) {
-    if (upToDate && e.date > upToDate) continue;
-    for (const l of e.lines) {
-      if (l.accountCode === code) {
-        debit += l.debit;
-        credit += l.credit;
-      }
+  await foldPostedJournalLines({ upToDate }, (accountCode, dr, cr) => {
+    if (accountCode === code) {
+      debit += dr;
+      credit += cr;
     }
-  }
+  });
   const type = typeForCode(code);
   const normalDebit = type === 'asset' || type === 'expense';
   const balance = normalDebit ? debit - credit : credit - debit;
@@ -121,26 +160,13 @@ export async function getAccountBalance(
 
 /** Balances for every account code touched, keyed by code. */
 export async function getAllBalances(upToDate?: string): Promise<Map<number, AccountBalance>> {
-  const entries = await db.journalEntries.where('status').equals('posted').toArray();
   const debits = new Map<number, number>();
   const credits = new Map<number, number>();
-  for (const e of entries) {
-    if (upToDate && e.date > upToDate) continue;
-    for (const l of e.lines) {
-      debits.set(l.accountCode, (debits.get(l.accountCode) ?? 0) + l.debit);
-      credits.set(l.accountCode, (credits.get(l.accountCode) ?? 0) + l.credit);
-    }
-  }
-  const result = new Map<number, AccountBalance>();
-  const codes = new Set<number>([...debits.keys(), ...credits.keys()]);
-  for (const code of codes) {
-    const debit = debits.get(code) ?? 0;
-    const credit = credits.get(code) ?? 0;
-    const type = typeForCode(code);
-    const normalDebit = type === 'asset' || type === 'expense';
-    result.set(code, { debit, credit, balance: normalDebit ? debit - credit : credit - debit });
-  }
-  return result;
+  await foldPostedJournalLines({ upToDate }, (accountCode, dr, cr) => {
+    debits.set(accountCode, (debits.get(accountCode) ?? 0) + dr);
+    credits.set(accountCode, (credits.get(accountCode) ?? 0) + cr);
+  });
+  return balancesFromMaps(debits, credits);
 }
 
 /** Sum of net balances across a code range (e.g. all income 400-499). */
@@ -155,4 +181,15 @@ export async function getRangeBalance(
     if (code >= from && code <= to) sum += bal.balance;
   }
   return sum;
+}
+
+/** Period activity balances (P&L) without loading the full journal into memory. */
+export async function getPeriodBalances(start: string, end: string): Promise<Map<number, AccountBalance>> {
+  const debits = new Map<number, number>();
+  const credits = new Map<number, number>();
+  await foldPostedJournalLines({ start, end }, (accountCode, dr, cr) => {
+    debits.set(accountCode, (debits.get(accountCode) ?? 0) + dr);
+    credits.set(accountCode, (credits.get(accountCode) ?? 0) + cr);
+  });
+  return balancesFromMaps(debits, credits);
 }

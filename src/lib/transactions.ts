@@ -1,5 +1,6 @@
 import {
   db,
+  assertDbWritable,
   now,
   uuid,
   type BankAccount,
@@ -28,11 +29,19 @@ import {
   nextDocumentNumberTx,
 } from '@/lib/sequences';
 
-/** Map every account code → its UUID (chart of accounts is small). */
+/** Map every account code → its UUID (chart of accounts is small, cached in-memory). */
+let cachedCodeMap: Map<number, string> | null = null;
+
+export function invalidateCodeToIdMap(): void {
+  cachedCodeMap = null;
+}
+
 async function codeToIdMap(): Promise<Map<number, string>> {
+  if (cachedCodeMap) return cachedCodeMap;
   const accounts = await db.accounts.toArray();
   const map = new Map<number, string>();
   for (const a of accounts) map.set(a.code, a.id);
+  cachedCodeMap = map;
   return map;
 }
 
@@ -80,11 +89,13 @@ async function recordBankTxn(
 }
 
 async function recordStockMovement(
-  product: { id: string; name: string; stockQty: number },
+  productId: string,
   type: StockMovement['type'],
   qtyChange: number,
   data: { date: string; reference: string; linkedId?: string; note?: string },
 ): Promise<number> {
+  const product = await db.products.get(productId);
+  if (!product) throw new Error('Product not found');
   const balanceAfter = product.stockQty + qtyChange;
   const mv: StockMovement = {
     id: uuid(),
@@ -164,8 +175,10 @@ export interface RecordSaleInput {
 }
 
 export async function recordSale(input: RecordSaleInput): Promise<string> {
+  assertDbWritable();
   assertIsoDate(input.date);
-  const subtotal = addMoney(...input.items.map((i) => i.total));
+  const lineItems = input.items.map((item) => ({ ...item }));
+  const subtotal = addMoney(...lineItems.map((i) => i.total));
   const total = Math.max(subtractMoney(subtotal, input.discount), 0);
   if (total <= 0) throw new Error('Sale total must be greater than zero');
   const paidAmount = Math.min(input.paidAmount, total);
@@ -189,13 +202,13 @@ export async function recordSale(input: RecordSaleInput): Promise<string> {
 
       // Resolve products inside the transaction to prevent overselling on concurrent sales.
       const qtyByProduct = new Map<string, number>();
-      for (const item of input.items) {
+      for (const item of lineItems) {
         qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) ?? 0) + item.qty);
       }
 
       const items: SaleItem[] = [];
       let cogs = 0;
-      for (const item of input.items) {
+      for (const item of lineItems) {
         const product = await db.products.get(item.productId);
         if (!product) throw new Error(`Product not found: ${item.productName}`);
         const needed = qtyByProduct.get(item.productId) ?? item.qty;
@@ -273,7 +286,7 @@ export async function recordSale(input: RecordSaleInput): Promise<string> {
       for (const item of items) {
         const product = await db.products.get(item.productId);
         if (product) {
-          const balanceAfter = await recordStockMovement(product, 'sale', -item.qty, {
+          const balanceAfter = await recordStockMovement(product.id, 'sale', -item.qty, {
             date: input.date,
             reference: saleNumber,
             linkedId: saleId,
@@ -314,7 +327,7 @@ export async function voidSale(saleId: string, reason: string): Promise<void> {
       for (const item of sale.items) {
         const product = await db.products.get(item.productId);
         if (product) {
-          const balanceAfter = await recordStockMovement(product, 'adjustment', item.qty, {
+          const balanceAfter = await recordStockMovement(product.id, 'adjustment', item.qty, {
             date: now().slice(0, 10),
             reference: `VOID-${sale.saleNumber}`,
             linkedId: saleId,
@@ -496,7 +509,7 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<string
 
       for (const item of input.items) {
         const product = (await db.products.get(item.productId))!;
-        const balanceAfter = await recordStockMovement(product, 'purchase', item.qty, {
+        const balanceAfter = await recordStockMovement(product.id, 'purchase', item.qty, {
             date: input.date,
             reference: purchaseNumber,
             linkedId: purchaseId,
@@ -613,7 +626,7 @@ export async function voidPurchase(purchaseId: string, reason: string): Promise<
             `Cannot void purchase: insufficient stock for ${product.name} (have ${product.stockQty}, need ${item.qty})`,
           );
         }
-        const balanceAfter = await recordStockMovement(product, 'adjustment', -item.qty, {
+        const balanceAfter = await recordStockMovement(product.id, 'adjustment', -item.qty, {
           date: now().slice(0, 10),
           reference: `VOID-${purchase.purchaseNumber}`,
           linkedId: purchaseId,
@@ -744,8 +757,13 @@ export async function transferBetweenBanks(input: {
   amount: number;
   note?: string;
 }): Promise<void> {
+  assertDbWritable();
   assertIsoDate(input.date);
   assertPositivePaise(input.amount);
+
+  if (input.fromBankId === input.toBankId) {
+    throw new Error('Source and destination must be different accounts');
+  }
 
   const from = await db.bankAccounts.get(input.fromBankId);
   const to = await db.bankAccounts.get(input.toBankId);
@@ -865,6 +883,9 @@ export async function recordManualBankEntry(input: {
   if (!bank?.isActive) throw new Error('Bank account not found');
 
   const map = await codeToIdMap();
+  if (!map.has(input.accountCode)) {
+    throw new Error(`Account ${input.accountCode} not found in chart of accounts`);
+  }
   const reference = `BNK-${uuid().slice(0, 8)}`;
 
   await db.transaction(
@@ -944,7 +965,7 @@ export async function adjustStock(input: {
               ],
       });
 
-      await recordStockMovement(product, 'adjustment', qtyChange, {
+      await recordStockMovement(product.id, 'adjustment', qtyChange, {
         date: input.date,
         reference: `ADJ-${product.sku}`,
         linkedId: journalEntryId,

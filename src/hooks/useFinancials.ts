@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db';
 import {
+  EMPTY_DASHBOARD_METRICS,
   getDashboardMetrics,
   getMonthlySeries,
   getNetWorthSeries,
@@ -14,37 +15,36 @@ import { usePeriodStore, periodRange } from '@/store/usePeriodStore';
 
 /** Dashboard metrics recomputed whenever journal entries or period change. */
 export function useFinancials(): {
-  metrics: DashboardMetrics | undefined;
-  series: MonthPoint[] | undefined;
-  netWorthSeries: NetWorthPoint[] | undefined;
+  metrics: DashboardMetrics;
+  series: MonthPoint[];
+  netWorthSeries: NetWorthPoint[];
 } {
   const currentFY = useAppStore((s) => s.currentFY);
   const { mode, year, month } = usePeriodStore();
   const range = periodRange({ mode, year, month });
 
   const metrics = useLiveQuery(async () => {
-    // Depend on journalEntries so the query re-runs on any posting.
     await db.journalEntries.count();
     if (range) {
       return getDashboardMetrics(range.start, range.end);
     }
     const { start, end } = fyDateRange(currentFY);
     return getDashboardMetrics(start, end);
-  }, [range?.start, range?.end, currentFY]);
+  }, [range?.start, range?.end, currentFY], EMPTY_DASHBOARD_METRICS);
 
   const series = useLiveQuery(async () => {
     await db.journalEntries.count();
     return getMonthlySeries(12);
-  }, []);
+  }, [], []);
 
   const netWorthSeries = useLiveQuery(async () => {
     await db.journalEntries.count();
     return getNetWorthSeries(12);
-  }, []);
+  }, [], []);
 
   return {
-    metrics,
-    series,
-    netWorthSeries,
+    metrics: metrics ?? EMPTY_DASHBOARD_METRICS,
+    series: series ?? [],
+    netWorthSeries: netWorthSeries ?? [],
   };
 }

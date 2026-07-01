@@ -50,15 +50,14 @@ export async function nextDocumentNumberTx(
 
   const patch: Partial<AppSettings> = {};
   let base = settings[field] ?? 0;
+  const storedFY = settings.sequenceFY ?? fyYear;
 
-  if ((settings.sequenceFY ?? fyYear) < fyYear) {
+  if (fyYear > storedFY) {
     patch.saleSequence = 0;
     patch.purchaseSequence = 0;
     patch.expenseSequence = 0;
-    base = 0;
-  }
-  if (settings.sequenceFY !== fyYear) {
     patch.sequenceFY = fyYear;
+    base = 0;
   }
 
   const next = base + 1;

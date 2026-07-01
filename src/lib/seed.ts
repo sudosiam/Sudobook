@@ -3,6 +3,7 @@ import { DEFAULT_ACCOUNTS, CODES, accountUuid, CASH_DRAWER_ID } from '@/lib/coa'
 import { syncDefaultCategories } from '@/lib/categories';
 import { getCurrentFY } from '@/lib/sequences';
 import { enqueueSync } from '@/lib/sync';
+import { invalidateCodeToIdMap } from '@/lib/transactions';
 import {
   VOID_REVERSAL_CLEANUP_MIGRATION,
   migrateVoidDoubleReversals,
@@ -16,12 +17,10 @@ import {
   retryFailedSyncQueue,
 } from '@/lib/migrations/retryFailedSyncQueue';
 
-/** Short random per-device code (e.g. "A3") used to keep document numbers unique across devices. */
+/** Short random per-device code (e.g. "A3F9") keeps document numbers unique across devices. */
 function makeDeviceId(): string {
-  return Math.floor(Math.random() * 36 * 36)
-    .toString(36)
-    .padStart(2, '0')
-    .toUpperCase();
+  const n = Math.floor(Math.random() * 36 ** 4);
+  return n.toString(36).padStart(4, '0').toUpperCase();
 }
 
 /**
@@ -154,6 +153,7 @@ export async function runMigrations(): Promise<void> {
 
   await syncMissingDefaultAccounts();
   await syncDefaultCategories();
+  invalidateCodeToIdMap();
 }
 
 /** Add any new default accounts missing from older installs (idempotent). */

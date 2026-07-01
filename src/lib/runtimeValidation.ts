@@ -33,11 +33,13 @@ export async function resolveExpensePaymentBank(
   bankAccountId: string | undefined,
   defaultCashBankId: () => Promise<string>,
 ): Promise<BankAccount> {
+  if (bankAccountId) {
+    const chosen = await db.bankAccounts.get(bankAccountId);
+    if (!chosen?.isActive) throw new Error('Bank account not found');
+    return chosen;
+  }
   if (paidFrom === 'bank') {
-    if (!bankAccountId) throw new Error('Bank account required for bank payment');
-    const bank = await db.bankAccounts.get(bankAccountId);
-    if (!bank?.isActive) throw new Error('Bank account not found');
-    return bank;
+    throw new Error('Bank account required for bank payment');
   }
   const cashId = await defaultCashBankId();
   const bank = await db.bankAccounts.get(cashId);

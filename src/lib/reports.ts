@@ -1,6 +1,6 @@
 import { db, activeWhere } from '@/lib/db';
-import { getAllBalances, getRangeBalance, type AccountBalance } from '@/lib/accounting';
-import { CODES, typeForCode } from '@/lib/coa';
+import { foldPostedJournalLines, getAllBalances, getPeriodBalances, getRangeBalance } from '@/lib/accounting';
+import { CODES } from '@/lib/coa';
 import { addMoney, multiplyMoney, subtractMoney } from '@/lib/money';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
 
@@ -28,7 +28,7 @@ export async function getProfitLoss(start: string, end: string): Promise<ProfitL
   const accounts = await db.accounts.toArray();
   const nameOf = (code: number) => accounts.find((a) => a.code === code)?.name ?? `#${code}`;
 
-  const balances = await balancesForPeriod(start, end);
+  const balances = await getPeriodBalances(start, end);
 
   const income: ReportLine[] = [];
   const expenses: ReportLine[] = [];
@@ -65,29 +65,6 @@ export async function getProfitLoss(start: string, end: string): Promise<ProfitL
   };
 }
 
-/** Net balances restricted to a [start,end] date window (for income/expense). */
-async function balancesForPeriod(start: string, end: string): Promise<Map<number, AccountBalance>> {
-  const entries = await db.journalEntries.where('status').equals('posted').toArray();
-  const debits = new Map<number, number>();
-  const credits = new Map<number, number>();
-  for (const e of entries) {
-    if (e.date < start || e.date > end) continue;
-    for (const l of e.lines) {
-      debits.set(l.accountCode, (debits.get(l.accountCode) ?? 0) + l.debit);
-      credits.set(l.accountCode, (credits.get(l.accountCode) ?? 0) + l.credit);
-    }
-  }
-  const result = new Map<number, AccountBalance>();
-  const codes = new Set<number>([...debits.keys(), ...credits.keys()]);
-  for (const code of codes) {
-    const debit = debits.get(code) ?? 0;
-    const credit = credits.get(code) ?? 0;
-    const type = typeForCode(code);
-    const normalDebit = type === 'asset' || type === 'expense';
-    result.set(code, { debit, credit, balance: normalDebit ? debit - credit : credit - debit });
-  }
-  return result;
-}
 
 // ─── BALANCE SHEET ────────────────────────────────────────────
 
@@ -309,6 +286,22 @@ export interface DashboardMetrics {
   totalLiquid: number;
 }
 
+export const EMPTY_DASHBOARD_METRICS: DashboardMetrics = {
+  netWorth: 0,
+  businessValue: 0,
+  cash: 0,
+  bank: 0,
+  receivable: 0,
+  payable: 0,
+  inventory: 0,
+  revenue: 0,
+  cogs: 0,
+  grossProfit: 0,
+  operatingExpenses: 0,
+  netProfit: 0,
+  totalLiquid: 0,
+};
+
 export async function getDashboardMetrics(
   fyStart: string,
   fyEnd: string,
@@ -362,26 +355,27 @@ export interface MonthPoint {
 }
 
 export async function getMonthlySeries(months = 6): Promise<MonthPoint[]> {
-  const entries = await db.journalEntries.where('status').equals('posted').toArray();
   const points: MonthPoint[] = [];
   const base = new Date();
   base.setDate(1);
 
   for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(base.getFullYear(), base.getMonth() - i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const label = d.toLocaleString('en-IN', { month: 'short' });
+    const monthStart = new Date(base.getFullYear(), base.getMonth() - i, 1);
+    const monthEnd = new Date(base.getFullYear(), base.getMonth() - i + 1, 0);
+    const start = monthStart.toISOString().slice(0, 10);
+    const end = monthEnd.toISOString().slice(0, 10);
+    const key = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`;
+    const label = monthStart.toLocaleString('en-IN', { month: 'short' });
+
     let revenue = 0;
     let cogs = 0;
     let expenses = 0;
-    for (const e of entries) {
-      if (!e.date.startsWith(key)) continue;
-      for (const l of e.lines) {
-        if (l.accountCode >= 400 && l.accountCode < 500) revenue += l.credit - l.debit;
-        else if (l.accountCode === CODES.COGS) cogs += l.debit - l.credit;
-        else if (l.accountCode >= 502 && l.accountCode < 600) expenses += l.debit - l.credit;
-      }
-    }
+    await foldPostedJournalLines({ start, end }, (accountCode, debit, credit) => {
+      if (accountCode >= 400 && accountCode < 500) revenue += credit - debit;
+      else if (accountCode === CODES.COGS) cogs += debit - credit;
+      else if (accountCode >= 502 && accountCode < 600) expenses += debit - credit;
+    });
+
     points.push({
       month: label,
       key,

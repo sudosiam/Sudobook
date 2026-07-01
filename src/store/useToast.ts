@@ -16,17 +16,39 @@ interface ToastState {
   dismiss: (id: string) => void;
 }
 
+const MAX_TOASTS = 5;
+const dismissTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 export const useToastStore = create<ToastState>((set) => ({
   toasts: [],
   push: (kind, message) => {
     const id = generateUuid();
-    set((s) => ({ toasts: [...s.toasts, { id, kind, message }] }));
+    set((s) => {
+      let toasts = [...s.toasts, { id, kind, message }];
+      if (toasts.length > MAX_TOASTS) {
+        const dropped = toasts.slice(0, toasts.length - MAX_TOASTS);
+        for (const t of dropped) {
+          const timer = dismissTimers.get(t.id);
+          if (timer) clearTimeout(timer);
+          dismissTimers.delete(t.id);
+        }
+        toasts = toasts.slice(-MAX_TOASTS);
+      }
+      return { toasts };
+    });
     const durationMs = kind === 'error' ? 7000 : 4000;
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      dismissTimers.delete(id);
       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
     }, durationMs);
+    dismissTimers.set(id, timer);
   },
-  dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+  dismiss: (id) => {
+    const timer = dismissTimers.get(id);
+    if (timer) clearTimeout(timer);
+    dismissTimers.delete(id);
+    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  },
 }));
 
 export const toast = {

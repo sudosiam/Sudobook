@@ -1,4 +1,4 @@
-import Dexie, { type IndexableType, type Table } from 'dexie';
+import Dexie, { type Table } from 'dexie';
 import { generateUuid } from '@/lib/utils';
 
 // ─── CORE TYPES ───────────────────────────────────────────────
@@ -400,13 +400,24 @@ export function onDbOutdated(handler: () => void): () => void {
   return () => window.removeEventListener(DB_OUTDATED_EVENT, handler);
 }
 
+/** True when this tab must reload before any IndexedDB writes will succeed. */
+export function isDbOutdated(): boolean {
+  return dbNeedsReload;
+}
+
+/** Throws when this tab lost its Dexie connection (schema upgrade elsewhere). */
+export function assertDbWritable(): void {
+  if (dbNeedsReload) {
+    throw new Error('This tab is out of date — reload the app to save your data.');
+  }
+}
+
 /**
- * Active rows only. `isActive` is stored as boolean `true` in IndexedDB —
- * querying with `.equals(1)` matches nothing and hides newly saved records.
+ * Active rows only. Uses `.filter()` because boolean `true` in IndexedDB does not
+ * match Dexie `.equals(1)` — see comment above.
  */
 export function activeWhere<T extends { isActive: boolean }>(table: Table<T, string>) {
-  // IndexedDB indexes booleans; Dexie's typings expect IndexableType (use 1 for true).
-  return table.where('isActive').equals(1 as IndexableType);
+  return table.filter((row) => row.isActive);
 }
 
 /** Current ISO timestamp helper — the ONLY way we generate timestamps. */
