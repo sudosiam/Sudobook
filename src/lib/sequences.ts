@@ -32,41 +32,51 @@ function toISODate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+type SequenceField = 'saleSequence' | 'purchaseSequence' | 'expenseSequence';
+
+/**
+ * Claim the next document number inside an existing Dexie rw transaction
+ * that already includes db.settings.
+ */
+export async function nextDocumentNumberTx(
+  field: SequenceField,
+  prefix: string,
+  docDate?: string,
+): Promise<string> {
+  const settings = await db.settings.get('singleton');
+  if (!settings) throw new Error('Settings not initialised');
+  const refDate = docDate ? new Date(`${docDate}T12:00:00`) : new Date();
+  const fyYear = getFYStartYear(refDate, settings.fyStartMonth);
+
+  const patch: Partial<AppSettings> = {};
+  let base = settings[field] ?? 0;
+
+  if ((settings.sequenceFY ?? fyYear) < fyYear) {
+    patch.saleSequence = 0;
+    patch.purchaseSequence = 0;
+    patch.expenseSequence = 0;
+    base = 0;
+  }
+  if (settings.sequenceFY !== fyYear) {
+    patch.sequenceFY = fyYear;
+  }
+
+  const next = base + 1;
+  patch[field] = next;
+  await db.settings.update('singleton', patch);
+
+  const suffix = settings.deviceId ? `-${settings.deviceId}` : '';
+  return `${prefix}-${fyYear}-${String(next).padStart(3, '0')}${suffix}`;
+}
+
 async function nextNumber(
-  field: 'saleSequence' | 'purchaseSequence' | 'expenseSequence',
+  field: SequenceField,
   prefix: string,
   docDate?: string,
 ): Promise<string> {
   let result = '';
   await db.transaction('rw', db.settings, async () => {
-    const settings = await db.settings.get('singleton');
-    if (!settings) throw new Error('Settings not initialised');
-    const refDate = docDate ? new Date(`${docDate}T12:00:00`) : new Date();
-    const fyYear = getFYStartYear(refDate, settings.fyStartMonth);
-
-    const patch: Partial<AppSettings> = {};
-    let base = settings[field] ?? 0;
-
-    // Reset every counter at the financial-year boundary (India: April 1).
-    // Only reset moving forward to avoid a backdated document ping-ponging
-    // the counters between years.
-    if ((settings.sequenceFY ?? fyYear) < fyYear) {
-      patch.saleSequence = 0;
-      patch.purchaseSequence = 0;
-      patch.expenseSequence = 0;
-      base = 0;
-    }
-    if (settings.sequenceFY !== fyYear) {
-      patch.sequenceFY = fyYear;
-    }
-
-    const next = base + 1;
-    patch[field] = next;
-    await db.settings.update('singleton', patch);
-    // Per-device suffix keeps numbers unique even if two devices increment the
-    // same local sequence while offline (they sync later without collisions).
-    const suffix = settings.deviceId ? `-${settings.deviceId}` : '';
-    result = `${prefix}-${fyYear}-${String(next).padStart(3, '0')}${suffix}`;
+    result = await nextDocumentNumberTx(field, prefix, docDate);
   });
   return result;
 }

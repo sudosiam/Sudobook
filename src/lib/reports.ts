@@ -2,6 +2,7 @@ import { db, activeWhere } from '@/lib/db';
 import { getAllBalances, getRangeBalance, type AccountBalance } from '@/lib/accounting';
 import { CODES, typeForCode } from '@/lib/coa';
 import { addMoney, multiplyMoney, subtractMoney } from '@/lib/money';
+import { differenceInCalendarDays, parseISO } from 'date-fns';
 
 export interface ReportLine {
   code: number;
@@ -193,14 +194,10 @@ export async function getTrialBalance(asOf?: string): Promise<TrialBalance> {
   let totalCredit = 0;
 
   for (const [code, bal] of balances) {
-    const type = typeForCode(code);
-    const normalDebit = type === 'asset' || type === 'expense';
-    const debit = normalDebit ? Math.max(bal.balance, 0) : Math.max(-bal.balance, 0);
-    const credit = normalDebit ? Math.max(-bal.balance, 0) : Math.max(bal.balance, 0);
-    if (debit === 0 && credit === 0) continue;
-    rows.push({ code, name: nameOf(code), debit, credit });
-    totalDebit += debit;
-    totalCredit += credit;
+    if (bal.debit === 0 && bal.credit === 0) continue;
+    rows.push({ code, name: nameOf(code), debit: bal.debit, credit: bal.credit });
+    totalDebit += bal.debit;
+    totalCredit += bal.credit;
   }
 
   rows.sort((a, b) => a.code - b.code);
@@ -245,6 +242,27 @@ export async function getCashFlow(start: string, end: string): Promise<CashFlow>
       }
     }
     if (!hasCash || cashDelta === 0) continue;
+
+    // Classify by entry type first, then fall back to counter-account heuristics.
+    if (e.entryType === 'opening') {
+      financing += cashDelta;
+      continue;
+    }
+    if (e.entryType === 'adjustment' && e.lines.some((l) => l.accountCode === CODES.FIXED_ASSETS)) {
+      investing += cashDelta;
+      continue;
+    }
+    if (
+      e.entryType === 'sale' ||
+      e.entryType === 'purchase' ||
+      e.entryType === 'expense' ||
+      e.entryType === 'receipt' ||
+      e.entryType === 'payment' ||
+      e.entryType === 'transfer'
+    ) {
+      operating += cashDelta;
+      continue;
+    }
 
     // Classify by the largest non-cash counter account in the entry.
     let counterCode = 0;
@@ -379,14 +397,39 @@ export async function getMonthlySeries(months = 6): Promise<MonthPoint[]> {
 // ─── PARTY BALANCES ───────────────────────────────────────────
 
 export async function getCustomerBalance(customerId: string): Promise<number> {
-  // Opening balance is already in journal entries — do NOT add it again.
+  const customer = await db.customers.get(customerId);
+  if (!customer) return 0;
+
+  let balance = customer.openingBalance;
   const sales = await db.sales.where('customerId').equals(customerId).toArray();
-  return addMoney(...sales.filter((s) => s.status !== 'void').map((s) => s.dueAmount));
+  balance = addMoney(balance, ...sales.filter((s) => s.status !== 'void').map((s) => s.dueAmount));
+
+  const linkedJes = await db.journalEntries.where('linkedId').equals(customerId).toArray();
+  for (const je of linkedJes) {
+    if (je.status !== 'posted' || je.entryType === 'opening') continue;
+    for (const l of je.lines) {
+      if (l.accountCode === CODES.RECEIVABLE) balance += l.debit - l.credit;
+    }
+  }
+  return balance;
 }
 
 export async function getVendorBalance(vendorId: string): Promise<number> {
+  const vendor = await db.vendors.get(vendorId);
+  if (!vendor) return 0;
+
+  let balance = vendor.openingBalance;
   const purchases = await db.purchases.where('vendorId').equals(vendorId).toArray();
-  return addMoney(...purchases.filter((p) => p.status !== 'void').map((p) => p.dueAmount));
+  balance = addMoney(balance, ...purchases.filter((p) => p.status !== 'void').map((p) => p.dueAmount));
+
+  const linkedJes = await db.journalEntries.where('linkedId').equals(vendorId).toArray();
+  for (const je of linkedJes) {
+    if (je.status !== 'posted' || je.entryType === 'opening') continue;
+    for (const l of je.lines) {
+      if (l.accountCode === CODES.PAYABLE) balance += l.credit - l.debit;
+    }
+  }
+  return balance;
 }
 
 export async function getBankBalance(bankAccountId: string): Promise<number> {
@@ -419,7 +462,9 @@ export async function getBankTransactionsWithBalance(
   const sorted = [...txns].sort((a, b) => {
     const byDate = a.date.localeCompare(b.date);
     if (byDate !== 0) return byDate;
-    return a.createdAt.localeCompare(b.createdAt);
+    const byRef = a.reference.localeCompare(b.reference);
+    if (byRef !== 0) return byRef;
+    return a.id.localeCompare(b.id);
   });
 
   let balance = bank.openingBalance; // paise
@@ -463,8 +508,7 @@ function emptyBuckets(): Record<AgingBucket, number> {
 }
 
 function daysSince(dateStr: string, asOf: Date): number {
-  const d = new Date(`${dateStr}T00:00:00`);
-  return Math.floor((asOf.getTime() - d.getTime()) / 86_400_000);
+  return differenceInCalendarDays(asOf, parseISO(dateStr));
 }
 
 function bucketForDays(days: number): AgingBucket {
@@ -490,7 +534,7 @@ function buildAgingReport(
 
 /** Receivables aging by customer — buckets based on sale date vs as-of date. */
 export async function getCustomerAging(asOf?: string): Promise<AgingReport> {
-  const ref = asOf ? new Date(`${asOf}T00:00:00`) : new Date();
+  const ref = asOf ? parseISO(asOf) : new Date();
   const customers = await activeWhere(db.customers).toArray();
   const rows: AgingRow[] = [];
 
@@ -512,7 +556,7 @@ export async function getCustomerAging(asOf?: string): Promise<AgingReport> {
 
 /** Payables aging by vendor — buckets based on purchase date vs as-of date. */
 export async function getVendorAging(asOf?: string): Promise<AgingReport> {
-  const ref = asOf ? new Date(`${asOf}T00:00:00`) : new Date();
+  const ref = asOf ? parseISO(asOf) : new Date();
   const vendors = await activeWhere(db.vendors).toArray();
   const rows: AgingRow[] = [];
 

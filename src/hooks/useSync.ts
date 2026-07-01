@@ -11,14 +11,23 @@ export function useSync() {
   const setStatus = useSyncStore((s) => s.setStatus);
 
   const pending = useLiveQuery(
-    () => db.syncQueue.where('status').anyOf('pending', 'failed').count(),
+    () => db.syncQueue.where('status').equals('pending').count(),
+    [],
+    0,
+  );
+  const failed = useLiveQuery(
+    () => db.syncQueue.where('status').equals('failed').count(),
     [],
     0,
   );
 
   useEffect(() => {
-    setPendingCount(pending ?? 0);
-  }, [pending, setPendingCount]);
+    setPendingCount((pending ?? 0) + (failed ?? 0));
+  }, [pending, failed, setPendingCount]);
+
+  useEffect(() => {
+    if ((failed ?? 0) > 0) setStatus('error');
+  }, [failed, setStatus]);
 
   const syncNow = useCallback(async () => {
     if (!isSupabaseConfigured) return;
@@ -31,5 +40,5 @@ export function useSync() {
     }
   }, [setStatus]);
 
-  return { pendingCount: pending ?? 0, syncNow, isSupabaseConfigured };
+  return { pendingCount: (pending ?? 0) + (failed ?? 0), failedCount: failed ?? 0, syncNow, isSupabaseConfigured };
 }

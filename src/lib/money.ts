@@ -25,8 +25,13 @@ export const toINRCompact = (paise: number): string =>
 
 /** Convert user rupee input (string or number) to integer paise. */
 export const toPaise = (rupees: string | number): number => {
-  const n = typeof rupees === 'string' ? Number(rupees.replace(/,/g, '').trim()) : rupees;
-  if (!Number.isFinite(n)) return 0;
+  const raw = typeof rupees === 'string' ? rupees.replace(/,/g, '').trim() : String(rupees);
+  if (raw === '' || raw === '.') return 0;
+  const n = typeof rupees === 'string' ? Number(raw) : rupees;
+  if (!Number.isFinite(n)) {
+    console.warn('[toPaise] Invalid amount — treated as 0:', rupees);
+    return 0;
+  }
   return Math.round(n * 100);
 };
 

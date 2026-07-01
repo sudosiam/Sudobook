@@ -15,7 +15,7 @@ import {
 } from '@/lib/db';
 import { CODES } from '@/lib/coa';
 import { postJournalEntryTx, voidJournalEntryTx } from '@/lib/accounting';
-import { enqueueSync } from '@/lib/sync';
+import { enqueueSync, requestSync } from '@/lib/sync';
 import { addMoney, multiplyMoney, reverseWeightedAverageCost, subtractMoney, weightedAverageCost } from '@/lib/money';
 import {
   assertExpenseAccountCode,
@@ -25,9 +25,7 @@ import {
   resolveExpensePaymentBank,
 } from '@/lib/runtimeValidation';
 import {
-  getNextExpenseNumber,
-  getNextPurchaseNumber,
-  getNextSaleNumber,
+  nextDocumentNumberTx,
 } from '@/lib/sequences';
 
 /** Map every account code → its UUID (chart of accounts is small). */
@@ -183,21 +181,27 @@ export async function recordSale(input: RecordSaleInput): Promise<string> {
     if (!bank) throw new Error('Payment account not found');
   }
 
-  const saleNumber = await getNextSaleNumber(input.date);
-
   await db.transaction(
     'rw',
-    [db.sales, db.products, db.stockMovements, db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.sales, db.products, db.stockMovements, db.bankTransactions, db.journalEntries, db.syncQueue, db.settings],
     async () => {
+      const saleNumber = await nextDocumentNumberTx('saleSequence', 'SALE', input.date);
+
       // Resolve products inside the transaction to prevent overselling on concurrent sales.
+      const qtyByProduct = new Map<string, number>();
+      for (const item of input.items) {
+        qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) ?? 0) + item.qty);
+      }
+
       const items: SaleItem[] = [];
       let cogs = 0;
       for (const item of input.items) {
         const product = await db.products.get(item.productId);
         if (!product) throw new Error(`Product not found: ${item.productName}`);
-        if (product.stockQty < item.qty) {
+        const needed = qtyByProduct.get(item.productId) ?? item.qty;
+        if (product.stockQty < needed) {
           throw new Error(
-            `Insufficient stock for ${product.name} (have ${product.stockQty}, need ${item.qty})`,
+            `Insufficient stock for ${product.name} (have ${product.stockQty}, need ${needed})`,
           );
         }
         const unitCost = product.costPrice;
@@ -291,6 +295,7 @@ export async function recordSale(input: RecordSaleInput): Promise<string> {
     },
   );
 
+  requestSync();
   return saleId;
 }
 
@@ -305,7 +310,7 @@ export async function voidSale(saleId: string, reason: string): Promise<void> {
     async () => {
       await voidLinkedJournalEntries(saleId, [sale.journalEntryId, sale.cogsEntryId], reason);
 
-      // Restore stock removed by the sale.
+      // Restore stock and weighted-average cost from the sale line snapshot.
       for (const item of sale.items) {
         const product = await db.products.get(item.productId);
         if (product) {
@@ -315,7 +320,13 @@ export async function voidSale(saleId: string, reason: string): Promise<void> {
             linkedId: saleId,
             note: 'Sale voided — stock restored',
           });
-          await updateProductStock(product.id, { stockQty: balanceAfter });
+          const newCost = weightedAverageCost(
+            product.stockQty,
+            product.costPrice,
+            item.qty,
+            item.costPrice,
+          );
+          await updateProductStock(product.id, { stockQty: balanceAfter, costPrice: newCost });
         }
       }
 
@@ -327,6 +338,7 @@ export async function voidSale(saleId: string, reason: string): Promise<void> {
       if (updated) await enqueueSync('sales', 'update', saleId, updated);
     },
   );
+  requestSync();
 }
 
 /** Receive a payment against a credit/partial sale (customer receivable). */
@@ -392,6 +404,7 @@ export async function receiveSalePayment(
       if (updated) await enqueueSync('sales', 'update', saleId, updated);
     },
   );
+  requestSync();
 }
 
 // ─── PURCHASES ────────────────────────────────────────────────
@@ -437,12 +450,11 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<string
   const status: Purchase['status'] =
     dueAmount === 0 ? 'completed' : paidAmount > 0 ? 'partial' : 'credit';
 
-  const purchaseNumber = await getNextPurchaseNumber(input.date);
-
   await db.transaction(
     'rw',
-    [db.purchases, db.products, db.stockMovements, db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.purchases, db.products, db.stockMovements, db.bankTransactions, db.journalEntries, db.syncQueue, db.settings],
     async () => {
+      const purchaseNumber = await nextDocumentNumberTx('purchaseSequence', 'PUR', input.date);
       for (const item of input.items) {
         const product = await db.products.get(item.productId);
         if (!product?.isActive) {
@@ -513,6 +525,7 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<string
     },
   );
 
+  requestSync();
   return purchaseId;
 }
 
@@ -578,6 +591,7 @@ export async function payPurchase(
       if (updated) await enqueueSync('purchases', 'update', purchaseId, updated);
     },
   );
+  requestSync();
 }
 
 export async function voidPurchase(purchaseId: string, reason: string): Promise<void> {
@@ -593,21 +607,25 @@ export async function voidPurchase(purchaseId: string, reason: string): Promise<
 
       for (const item of purchase.items) {
         const product = await db.products.get(item.productId);
-        if (product) {
-          const balanceAfter = await recordStockMovement(product, 'adjustment', -item.qty, {
-            date: now().slice(0, 10),
-            reference: `VOID-${purchase.purchaseNumber}`,
-            linkedId: purchaseId,
-            note: 'Purchase voided — stock removed',
-          });
-          const restoredCost = reverseWeightedAverageCost(
-            product.stockQty,
-            product.costPrice,
-            item.qty,
-            item.unitCost,
+        if (!product) continue;
+        if (product.stockQty < item.qty) {
+          throw new Error(
+            `Cannot void purchase: insufficient stock for ${product.name} (have ${product.stockQty}, need ${item.qty})`,
           );
-          await updateProductStock(product.id, { stockQty: balanceAfter, costPrice: restoredCost });
         }
+        const balanceAfter = await recordStockMovement(product, 'adjustment', -item.qty, {
+          date: now().slice(0, 10),
+          reference: `VOID-${purchase.purchaseNumber}`,
+          linkedId: purchaseId,
+          note: 'Purchase voided — stock removed',
+        });
+        const restoredCost = reverseWeightedAverageCost(
+          product.stockQty,
+          product.costPrice,
+          item.qty,
+          item.unitCost,
+        );
+        await updateProductStock(product.id, { stockQty: balanceAfter, costPrice: restoredCost });
       }
 
       await reverseBankTxnsFor(purchaseId);
@@ -617,6 +635,7 @@ export async function voidPurchase(purchaseId: string, reason: string): Promise<
       if (updated) await enqueueSync('purchases', 'update', purchaseId, updated);
     },
   );
+  requestSync();
 }
 
 // ─── EXPENSES ─────────────────────────────────────────────────
@@ -645,12 +664,12 @@ export async function recordExpense(input: RecordExpenseInput): Promise<string> 
     defaultCashBankId,
   );
 
-  const expenseNumber = await getNextExpenseNumber(input.date);
-
   await db.transaction(
     'rw',
-    [db.expenses, db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.expenses, db.bankTransactions, db.journalEntries, db.syncQueue, db.settings],
     async () => {
+      const expenseNumber = await nextDocumentNumberTx('expenseSequence', 'EXP', input.date);
+
       const journalEntryId = await postJournalEntryTx({
         date: input.date,
         reference: expenseNumber,
@@ -693,6 +712,7 @@ export async function recordExpense(input: RecordExpenseInput): Promise<string> 
     },
   );
 
+  requestSync();
   return expenseId;
 }
 
@@ -712,6 +732,7 @@ export async function voidExpense(expenseId: string, reason: string): Promise<vo
       if (updated) await enqueueSync('expenses', 'update', expenseId, updated);
     },
   );
+  requestSync();
 }
 
 // ─── BANKING ──────────────────────────────────────────────────

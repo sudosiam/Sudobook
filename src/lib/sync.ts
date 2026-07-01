@@ -7,10 +7,12 @@ import {
   verifySupabaseSchema,
 } from '@/lib/supabaseSchema';
 import { toast } from '@/store/useToast';
+import { postDueRecurringExpenses } from '@/lib/recurring';
 
 export { getSupabaseSchemaStatus, verifySupabaseSchema };
 
 const MAX_RETRIES = 3;
+const warnedFailedSync = new Set<string>();
 
 const warnedMissingTables = new Set<string>();
 /** Remote tables confirmed absent this session — skip pull/push to avoid 404 spam. */
@@ -66,7 +68,10 @@ export async function enqueueSync(
     status: 'pending',
   };
   await db.syncQueue.add(item);
-  // Push soon after a local save (debounced so burst writes coalesce).
+}
+
+/** Schedule a background sync after the current Dexie write transaction commits. */
+export function requestSync(): void {
   scheduleSyncSoon();
 }
 
@@ -144,10 +149,15 @@ export async function processSyncQueue(): Promise<void> {
         } else {
           console.error('[processSyncQueue]', item.table, err);
           const retryCount = item.retryCount + 1;
+          const status = retryCount >= MAX_RETRIES ? 'failed' : 'pending';
           await db.syncQueue.update(item.id, {
-            status: retryCount >= MAX_RETRIES ? 'failed' : 'pending',
+            status,
             retryCount,
           });
+          if (status === 'failed' && !warnedFailedSync.has(item.id)) {
+            warnedFailedSync.add(item.id);
+            toast.error(`Cloud sync failed for ${item.table} — tap Sync Now in Settings to retry`);
+          }
           hadFailure = true;
         }
       }
@@ -168,6 +178,19 @@ interface MirrorRow {
   data: Record<string, unknown>;
   updated_at: string;
   deleted_at: string | null;
+}
+
+/** Never let cloud sync revert a locally voided journal entry back to posted. */
+function shouldApplyRemoteJournal(
+  local: { status?: string; updatedAt?: string; createdAt?: string } | undefined,
+  remote: { status?: string; updatedAt?: string; createdAt?: string },
+  remoteUpdatedAt: string,
+): boolean {
+  if (!local) return true;
+  if (local.status === 'void' && remote.status === 'posted') return false;
+  const localStamp = local.updatedAt ?? local.createdAt ?? '';
+  const remoteStamp = remote.updatedAt ?? remote.createdAt ?? remoteUpdatedAt;
+  return remoteStamp >= localStamp;
 }
 
 let pulling = false;
@@ -196,7 +219,6 @@ export async function pullFromSupabase(): Promise<void> {
     const settings = await db.settings.get('singleton');
     const since = settings?.lastPullAt; // undefined only on a new device
     let watermark = since ?? '1970-01-01T00:00:00.000Z';
-    let hadError = false;
 
     for (const { local, remote } of SYNC_TABLES) {
       if (missingRemoteTables.has(remote)) continue;
@@ -214,7 +236,6 @@ export async function pullFromSupabase(): Promise<void> {
         } else {
           console.error('[pullFromSupabase]', remote, error);
         }
-        hadError = true;
         continue;
       }
 
@@ -234,22 +255,29 @@ export async function pullFromSupabase(): Promise<void> {
             const localStamp = localRec?.updatedAt ?? localRec?.createdAt ?? '';
             const remoteStamp = record.updatedAt ?? record.createdAt ?? row.updated_at;
 
-            if (!localRec || remoteStamp >= localStamp) {
+            const isJournal = local === 'journalEntries';
+            const applyJournal = isJournal
+              ? shouldApplyRemoteJournal(
+                  localRec as { status?: string; updatedAt?: string; createdAt?: string },
+                  record as { status?: string; updatedAt?: string; createdAt?: string },
+                  row.updated_at,
+                )
+              : true;
+
+            if ((!localRec || remoteStamp >= localStamp) && applyJournal) {
               await table.put(record);
+              if (row.updated_at > watermark) watermark = row.updated_at;
             }
           }
-          // Only advance the watermark for rows we successfully applied.
-          if (row.updated_at > watermark) watermark = row.updated_at;
         } catch (err) {
           console.error('[pullFromSupabase] apply', remote, row.id, err);
-          hadError = true;
         }
       }
     }
 
-    // Never advance the watermark past a failure, or we'd permanently skip the
-    // rows we couldn't pull. Next run retries the same window (idempotent).
-    if (!hadError) {
+    // Persist progress even on partial failure — applied rows are idempotent on re-pull.
+    const baseline = since ?? '1970-01-01T00:00:00.000Z';
+    if (watermark > baseline) {
       await db.settings.update('singleton', { lastPullAt: watermark });
     }
   } finally {
@@ -293,6 +321,11 @@ export async function runSync(): Promise<void> {
       }
       await processSyncQueue();
       await pullFromSupabase();
+      try {
+        await postDueRecurringExpenses();
+      } catch (err) {
+        console.error('[postDueRecurringExpenses]', err);
+      }
     } while (runSyncQueued);
   })();
 

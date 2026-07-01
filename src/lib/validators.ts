@@ -15,7 +15,10 @@ const expenseCode = z
   .min(502, 'Must be an expense account (502–599)')
   .max(599, 'Must be an expense account (502–599)');
 
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
+  .refine((d) => d <= new Date().toISOString().slice(0, 10), 'Date cannot be in the future');
 
 export const saleItemSchema = z
   .object({

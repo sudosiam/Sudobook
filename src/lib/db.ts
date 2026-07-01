@@ -1,4 +1,4 @@
-import Dexie, { type Table } from 'dexie';
+import Dexie, { type IndexableType, type Table } from 'dexie';
 import { generateUuid } from '@/lib/utils';
 
 // ─── CORE TYPES ───────────────────────────────────────────────
@@ -405,7 +405,8 @@ export function onDbOutdated(handler: () => void): () => void {
  * querying with `.equals(1)` matches nothing and hides newly saved records.
  */
 export function activeWhere<T extends { isActive: boolean }>(table: Table<T, string>) {
-  return table.filter((row) => row.isActive);
+  // IndexedDB indexes booleans; Dexie's typings expect IndexableType (use 1 for true).
+  return table.where('isActive').equals(1 as IndexableType);
 }
 
 /** Current ISO timestamp helper — the ONLY way we generate timestamps. */
