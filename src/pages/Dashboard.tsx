@@ -39,7 +39,7 @@ export default function Dashboard() {
       <PageContainer>
         {chartsLoading ? (
           <div className="page-stack pb-1">
-            <Skeleton className="h-20 rounded-2xl" />
+            <Skeleton className="h-24 rounded-2xl" />
             <SkeletonStatGrid count={8} />
             <SkeletonChartCard />
             <SkeletonChartCard />
@@ -66,9 +66,18 @@ export default function Dashboard() {
               </RevealItem>
             )}
 
-            <RevealItem className="card-accent card-glow">
+            <RevealItem className="card-accent card-glow px-4 py-4">
               <p className="section-label">Net Profit</p>
-              <MoneyDisplay amount={metrics.netProfit} tone="profit" className="hero-money mt-0.5 block" animate />
+              <MoneyDisplay
+                amount={metrics.netProfit}
+                tone="profit"
+                className="hero-money mt-1 block !text-2xl sm:!text-[1.75rem]"
+                animate
+              />
+              <p className="mt-2 text-[10px] leading-tight text-muted">
+                Other income{' '}
+                <MoneyDisplay amount={metrics.otherIncome} className="text-[10px] text-muted" />
+              </p>
             </RevealItem>
 
             <RevealItem className="grid grid-cols-2 gap-2">

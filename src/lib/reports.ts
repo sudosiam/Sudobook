@@ -300,6 +300,8 @@ export interface DashboardMetrics {
   grossProfit: number;
   operatingExpenses: number;
   netProfit: number;
+  /** Account 402 — other income for the selected period */
+  otherIncome: number;
   /** Cash in hand + bank accounts */
   totalLiquid: number;
 }
@@ -317,6 +319,7 @@ export const EMPTY_DASHBOARD_METRICS: DashboardMetrics = {
   grossProfit: 0,
   operatingExpenses: 0,
   netProfit: 0,
+  otherIncome: 0,
   totalLiquid: 0,
 };
 
@@ -339,6 +342,7 @@ export async function getDashboardMetrics(
   }
 
   const pl = await getProfitLoss(fyStart, fyEnd);
+  const otherIncome = pl.income.find((i) => i.code === CODES.OTHER_INCOME)?.amount ?? 0;
 
   const netWorth = totalAssets - totalLiabilities;
   const businessValue = subtractMoney(addMoney(cash, bank, receivable, inventory), payable);
@@ -357,6 +361,7 @@ export async function getDashboardMetrics(
     grossProfit: pl.grossProfit,
     operatingExpenses: pl.totalExpenses,
     netProfit: pl.netProfit,
+    otherIncome,
     totalLiquid,
   };
 }
