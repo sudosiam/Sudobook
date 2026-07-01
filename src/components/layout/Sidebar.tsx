@@ -175,9 +175,13 @@ export function Sidebar() {
     return () => window.removeEventListener('keydown', onKey);
   }, [trapActive, dismissSidebar]);
 
+  const sidebarOpenRef = useRef(sidebarOpen);
+  sidebarOpenRef.current = sidebarOpen;
+
+  /** Close on route change only — must not depend on `sidebarOpen` or the menu closes instantly. */
   useEffect(() => {
-    if (sidebarOpen) dismissSidebar();
-  }, [location.pathname, sidebarOpen, dismissSidebar]);
+    if (sidebarOpenRef.current) dismissSidebar();
+  }, [location.pathname, dismissSidebar]);
 
   return (
     <>

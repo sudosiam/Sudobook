@@ -14,6 +14,7 @@ const NewPurchase = lazyRetry(() => import('@/pages/purchases/NewPurchase'));
 const PurchaseDetail = lazyRetry(() => import('@/pages/purchases/PurchaseDetail'));
 const ExpensesList = lazyRetry(() => import('@/pages/expenses/ExpensesList'));
 const NewExpense = lazyRetry(() => import('@/pages/expenses/NewExpense'));
+const ExpenseCategories = lazyRetry(() => import('@/pages/expenses/ExpenseCategories'));
 const NewRecurringExpense = lazyRetry(() => import('@/pages/expenses/NewRecurringExpense'));
 const ProductsList = lazyRetry(() => import('@/pages/inventory/ProductsList'));
 const ProductCategories = lazyRetry(() => import('@/pages/inventory/ProductCategories'));
@@ -66,6 +67,7 @@ export default function App() {
           <Route path="/purchases/:id" element={<PurchaseDetail />} />
           <Route path="/expenses" element={<ExpensesList />} />
           <Route path="/expenses/new" element={<NewExpense />} />
+          <Route path="/expenses/categories" element={<ExpenseCategories />} />
           <Route path="/expenses/recurring/new" element={<NewRecurringExpense />} />
           <Route path="/inventory" element={<ProductsList />} />
           <Route path="/inventory/categories" element={<ProductCategories />} />

@@ -109,7 +109,17 @@ export default function ExpensesList() {
 
   return (
     <>
-      <TopBar title="Expenses" right={<PeriodFilter placement="header" />} />
+      <TopBar
+        title="Expenses"
+        right={
+          <div className="flex items-center gap-2">
+            <Link to="/expenses/categories" className="text-xs text-brand-light">
+              Categories
+            </Link>
+            <PeriodFilter placement="header" />
+          </div>
+        }
+      />
       <PageContainer>
         {(recurring ?? []).length > 0 && (
           <div className="mb-3 card">
