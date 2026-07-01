@@ -861,6 +861,288 @@ export async function recordFixedAssetPurchase(input: {
   return linkedId;
 }
 
+/** Borrow funds — debits cash/bank, credits Loans (202). */
+export async function recordLoanReceived(input: {
+  date: string;
+  description: string;
+  amount: number; // paise
+  paidFrom: 'cash' | 'bank';
+  bankAccountId?: string;
+}): Promise<string> {
+  assertIsoDate(input.date);
+  assertPositivePaise(input.amount);
+
+  const map = await codeToIdMap();
+  const linkedId = uuid();
+  const reference = `LN-${uuid().slice(0, 8).toUpperCase()}`;
+  const bank = await resolveExpensePaymentBank(
+    input.paidFrom,
+    input.bankAccountId,
+    defaultCashBankId,
+  );
+
+  await db.transaction(
+    'rw',
+    [db.bankTransactions, db.journalEntries, db.syncQueue],
+    async () => {
+      const journalEntryId = await postJournalEntryTx({
+        date: input.date,
+        reference,
+        description: `Loan received: ${input.description}`,
+        entryType: 'adjustment',
+        linkedId,
+        lines: [
+          line(map, bankCode(bank), input.amount, 0, 'Proceeds'),
+          line(map, CODES.LOANS, 0, input.amount, input.description),
+        ],
+      });
+
+      await recordBankTxn(bank, 'credit', input.amount, {
+        date: input.date,
+        description: `Loan received: ${input.description}`,
+        category: 'other',
+        reference,
+        linkedId,
+        journalEntryId,
+      });
+    },
+  );
+
+  return linkedId;
+}
+
+/** Repay loan principal — debits Loans (202), credits cash/bank. */
+export async function recordLoanRepayment(input: {
+  date: string;
+  description: string;
+  amount: number; // paise
+  paidFrom: 'cash' | 'bank';
+  bankAccountId?: string;
+}): Promise<string> {
+  assertIsoDate(input.date);
+  assertPositivePaise(input.amount);
+
+  const map = await codeToIdMap();
+  const linkedId = uuid();
+  const reference = `LN-${uuid().slice(0, 8).toUpperCase()}`;
+  const bank = await resolveExpensePaymentBank(
+    input.paidFrom,
+    input.bankAccountId,
+    defaultCashBankId,
+  );
+
+  await db.transaction(
+    'rw',
+    [db.bankTransactions, db.journalEntries, db.syncQueue],
+    async () => {
+      const journalEntryId = await postJournalEntryTx({
+        date: input.date,
+        reference,
+        description: `Loan repayment: ${input.description}`,
+        entryType: 'adjustment',
+        linkedId,
+        lines: [
+          line(map, CODES.LOANS, input.amount, 0, input.description),
+          line(map, bankCode(bank), 0, input.amount, 'Paid'),
+        ],
+      });
+
+      await recordBankTxn(bank, 'debit', input.amount, {
+        date: input.date,
+        description: `Loan repayment: ${input.description}`,
+        category: 'other',
+        reference,
+        linkedId,
+        journalEntryId,
+      });
+    },
+  );
+
+  return linkedId;
+}
+
+/** Owner puts money into the business — debits cash/bank, credits Owner's Capital (301). */
+export async function recordOwnerContribution(input: {
+  date: string;
+  description: string;
+  amount: number; // paise
+  paidFrom: 'cash' | 'bank';
+  bankAccountId?: string;
+}): Promise<string> {
+  assertIsoDate(input.date);
+  assertPositivePaise(input.amount);
+
+  const map = await codeToIdMap();
+  const linkedId = uuid();
+  const reference = `EQ-${uuid().slice(0, 8).toUpperCase()}`;
+  const bank = await resolveExpensePaymentBank(
+    input.paidFrom,
+    input.bankAccountId,
+    defaultCashBankId,
+  );
+
+  await db.transaction(
+    'rw',
+    [db.bankTransactions, db.journalEntries, db.syncQueue],
+    async () => {
+      const journalEntryId = await postJournalEntryTx({
+        date: input.date,
+        reference,
+        description: `Owner contribution: ${input.description}`,
+        entryType: 'adjustment',
+        linkedId,
+        lines: [
+          line(map, bankCode(bank), input.amount, 0, 'Contribution'),
+          line(map, CODES.CAPITAL, 0, input.amount, input.description),
+        ],
+      });
+
+      await recordBankTxn(bank, 'credit', input.amount, {
+        date: input.date,
+        description: `Owner contribution: ${input.description}`,
+        category: 'other',
+        reference,
+        linkedId,
+        journalEntryId,
+      });
+    },
+  );
+
+  return linkedId;
+}
+
+/** Owner withdrawal — debits Owner's Capital (301), credits cash/bank. */
+export async function recordOwnerDraw(input: {
+  date: string;
+  description: string;
+  amount: number; // paise
+  paidFrom: 'cash' | 'bank';
+  bankAccountId?: string;
+}): Promise<string> {
+  assertIsoDate(input.date);
+  assertPositivePaise(input.amount);
+
+  const map = await codeToIdMap();
+  const linkedId = uuid();
+  const reference = `EQ-${uuid().slice(0, 8).toUpperCase()}`;
+  const bank = await resolveExpensePaymentBank(
+    input.paidFrom,
+    input.bankAccountId,
+    defaultCashBankId,
+  );
+
+  await db.transaction(
+    'rw',
+    [db.bankTransactions, db.journalEntries, db.syncQueue],
+    async () => {
+      const journalEntryId = await postJournalEntryTx({
+        date: input.date,
+        reference,
+        description: `Owner draw: ${input.description}`,
+        entryType: 'adjustment',
+        linkedId,
+        lines: [
+          line(map, CODES.CAPITAL, input.amount, 0, input.description),
+          line(map, bankCode(bank), 0, input.amount, 'Withdrawn'),
+        ],
+      });
+
+      await recordBankTxn(bank, 'debit', input.amount, {
+        date: input.date,
+        description: `Owner draw: ${input.description}`,
+        category: 'other',
+        reference,
+        linkedId,
+        journalEntryId,
+      });
+    },
+  );
+
+  return linkedId;
+}
+
+/** Pay credit card bill — debits Credit Cards (203), credits cash/bank. */
+export async function recordCreditCardPayment(input: {
+  date: string;
+  description: string;
+  amount: number; // paise
+  paidFrom: 'cash' | 'bank';
+  bankAccountId?: string;
+}): Promise<string> {
+  assertIsoDate(input.date);
+  assertPositivePaise(input.amount);
+
+  const map = await codeToIdMap();
+  const linkedId = uuid();
+  const reference = `CC-${uuid().slice(0, 8).toUpperCase()}`;
+  const bank = await resolveExpensePaymentBank(
+    input.paidFrom,
+    input.bankAccountId,
+    defaultCashBankId,
+  );
+
+  await db.transaction(
+    'rw',
+    [db.bankTransactions, db.journalEntries, db.syncQueue],
+    async () => {
+      const journalEntryId = await postJournalEntryTx({
+        date: input.date,
+        reference,
+        description: `Credit card payment: ${input.description}`,
+        entryType: 'adjustment',
+        linkedId,
+        lines: [
+          line(map, CODES.CREDIT_CARDS, input.amount, 0, input.description),
+          line(map, bankCode(bank), 0, input.amount, 'Paid'),
+        ],
+      });
+
+      await recordBankTxn(bank, 'debit', input.amount, {
+        date: input.date,
+        description: `Credit card payment: ${input.description}`,
+        category: 'other',
+        reference,
+        linkedId,
+        journalEntryId,
+      });
+    },
+  );
+
+  return linkedId;
+}
+
+/** Expense on credit card — debits expense account, credits Credit Cards (203). No cash movement. */
+export async function recordCreditCardCharge(input: {
+  date: string;
+  description: string;
+  amount: number; // paise
+  accountCode: number;
+}): Promise<string> {
+  assertIsoDate(input.date);
+  assertPositivePaise(input.amount);
+  assertExpenseAccountCode(input.accountCode);
+
+  const map = await codeToIdMap();
+  const linkedId = uuid();
+  const reference = `CC-${uuid().slice(0, 8).toUpperCase()}`;
+
+  await db.transaction('rw', [db.journalEntries, db.syncQueue], async () => {
+    await postJournalEntryTx({
+      date: input.date,
+      reference,
+      description: `Credit card: ${input.description}`,
+      entryType: 'expense',
+      linkedId,
+      lines: [
+        line(map, input.accountCode, input.amount, 0, input.description),
+        line(map, CODES.CREDIT_CARDS, 0, input.amount, 'On card'),
+      ],
+    });
+  });
+
+  return linkedId;
+}
+
 /** Manual bank deposit or withdrawal not linked to a sale/purchase/expense document. */
 export async function recordManualBankEntry(input: {
   date: string;

@@ -272,6 +272,7 @@ export async function getCashFlow(start: string, end: string): Promise<CashFlow>
 
     if (counterCode >= 300 && counterCode < 400) financing += cashDelta;
     else if (counterCode === CODES.FIXED_ASSETS) investing += cashDelta;
+    else if (counterCode === CODES.LOANS || counterCode === CODES.CREDIT_CARDS) financing += cashDelta;
     else operating += cashDelta;
   });
 

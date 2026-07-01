@@ -43,6 +43,9 @@ const Growth = lazyRetry(() => import('@/pages/growth/Growth'));
 const Settings = lazyRetry(() => import('@/pages/settings/Settings'));
 const More = lazyRetry(() => import('@/pages/more/More'));
 const NewFixedAsset = lazyRetry(() => import('@/pages/more/NewFixedAsset'));
+const NewLoan = lazyRetry(() => import('@/pages/more/NewLoan'));
+const NewCreditCard = lazyRetry(() => import('@/pages/more/NewCreditCard'));
+const NewOwnerCapital = lazyRetry(() => import('@/pages/more/NewOwnerCapital'));
 const OutstandingPayments = lazyRetry(() => import('@/pages/payments/OutstandingPayments'));
 const OutstandingPayables = lazyRetry(() => import('@/pages/payments/OutstandingPayables'));
 const BankTransferPage = lazyRetry(() => import('@/pages/banking/BankTransferPage'));
@@ -96,6 +99,9 @@ export default function App() {
           <Route path="/payments/payable" element={<OutstandingPayables />} />
           <Route path="/more" element={<More />} />
           <Route path="/more/fixed-asset" element={<NewFixedAsset />} />
+          <Route path="/more/loan" element={<NewLoan />} />
+          <Route path="/more/credit-card" element={<NewCreditCard />} />
+          <Route path="/more/owner-capital" element={<NewOwnerCapital />} />
           <Route path="/settings" element={<Settings />} />
           </Route>
         </Routes>

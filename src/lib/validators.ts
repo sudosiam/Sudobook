@@ -242,6 +242,60 @@ export const fixedAssetPurchaseSchema = z
     path: ['bankAccountId'],
   });
 
+const bankPaidFromFields = {
+  date: isoDate,
+  description: z.string().min(1, 'Description required'),
+  amount: positivePaise,
+  paidFrom: z.enum(['cash', 'bank'] as const),
+  bankAccountId: z.string().optional(),
+};
+
+export const loanMovementSchema = z
+  .object({
+    ...bankPaidFromFields,
+    kind: z.enum(['receive', 'repay']),
+  })
+  .refine((v) => (v.paidFrom === 'bank' ? !!v.bankAccountId : true), {
+    message: 'Select a bank account',
+    path: ['bankAccountId'],
+  });
+
+export const ownerCapitalSchema = z
+  .object({
+    ...bankPaidFromFields,
+    kind: z.enum(['contribution', 'draw']),
+  })
+  .refine((v) => (v.paidFrom === 'bank' ? !!v.bankAccountId : true), {
+    message: 'Select a bank account',
+    path: ['bankAccountId'],
+  });
+
+export const creditCardSchema = z
+  .object({
+    date: isoDate,
+    description: z.string().min(1, 'Description required'),
+    amount: positivePaise,
+    kind: z.enum(['payment', 'charge']),
+    accountCode: expenseCode.optional(),
+    paidFrom: z.enum(['cash', 'bank']).optional(),
+    bankAccountId: z.string().optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.kind === 'charge') {
+      if (v.accountCode == null) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Select expense category', path: ['accountCode'] });
+      }
+      return;
+    }
+    if (!v.paidFrom) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Select payment source', path: ['paidFrom'] });
+      return;
+    }
+    if (v.paidFrom === 'bank' && !v.bankAccountId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Select a bank account', path: ['bankAccountId'] });
+    }
+  });
+
 export const manualBankEntrySchema = z
   .object({
     date: isoDate,
@@ -332,5 +386,8 @@ export type PaymentFormData = z.infer<typeof paymentSchema>;
 export type TransferFormData = z.infer<typeof transferSchema>;
 export type StockAdjustmentFormData = z.infer<typeof stockAdjustmentSchema>;
 export type FixedAssetPurchaseFormData = z.infer<typeof fixedAssetPurchaseSchema>;
+export type LoanMovementFormData = z.infer<typeof loanMovementSchema>;
+export type OwnerCapitalFormData = z.infer<typeof ownerCapitalSchema>;
+export type CreditCardFormData = z.infer<typeof creditCardSchema>;
 export type ManualBankEntryFormData = z.infer<typeof manualBankEntrySchema>;
 export type RecurringExpenseFormData = z.infer<typeof recurringExpenseSchema>;
