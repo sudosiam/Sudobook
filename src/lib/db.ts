@@ -278,6 +278,8 @@ export interface AppSettings {
   currency: 'INR';
   lastSyncAt?: string;
   lastPullAt?: string;
+  /** Per Supabase mirror table — avoids one failed table blocking all pull progress. */
+  lastPullAtByTable?: Record<string, string>;
   syncResetToken?: string;
   /** Short random per-device code (e.g. "A3") that makes document numbers collision-proof across devices. */
   deviceId?: string;

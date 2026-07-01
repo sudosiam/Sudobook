@@ -116,6 +116,18 @@ export function SyncPanel({ activeUserId }: { activeUserId: string | null }) {
         </p>
       )}
 
+      {!activeUserId && ((pending ?? 0) > 0 || (failed ?? 0) > 0) && (
+        <p className="text-xs text-danger">
+          {(pending ?? 0) + (failed ?? 0)} change(s) waiting — sign in below to upload to cloud.
+        </p>
+      )}
+
+      {(failed ?? 0) > 0 && activeUserId && online && (
+        <p className="text-xs text-danger">
+          {failed} item(s) failed to sync. Tap Retry below — your data is safe on this device.
+        </p>
+      )}
+
       <Button
         variant="secondary"
         disabled={!activeUserId || !online || status === 'syncing'}
