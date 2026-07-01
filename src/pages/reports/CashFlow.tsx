@@ -44,6 +44,20 @@ export default function CashFlow() {
             <Row label="Financing Activities" amount={cf.financing} colored />
             <Row label="Net Change" amount={cf.netChange} colored bold />
             <Row label="Closing Cash & Bank" amount={cf.closing} bold />
+            <div className="grid grid-cols-3 gap-2 bg-app px-4 py-3">
+              <div className="text-center">
+                <p className="text-[10px] uppercase tracking-wider text-muted">Debit</p>
+                <MoneyDisplay amount={cf.totalDebit} className="mt-1 block text-sm font-semibold" />
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] uppercase tracking-wider text-muted">Credit</p>
+                <MoneyDisplay amount={cf.totalCredit} className="mt-1 block text-sm font-semibold" />
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] uppercase tracking-wider text-muted">Net</p>
+                <MoneyDisplay amount={cf.net} colored className="mt-1 block text-sm font-semibold" />
+              </div>
+            </div>
           </div>
           </>
         )}

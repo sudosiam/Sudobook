@@ -57,7 +57,9 @@ export function chartTooltipProps(colors = chartThemeColors()) {
       background: colors.surface,
       border: `1px solid ${colors.border}`,
       borderRadius: 8,
+      color: colors.text,
     },
     labelStyle: { color: colors.text },
+    itemStyle: { color: colors.text },
   };
 }

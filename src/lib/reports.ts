@@ -205,6 +205,12 @@ export interface CashFlow {
   financing: number;
   netChange: number;
   closing: number;
+  /** Gross cash/bank debits in the period (inflows) */
+  totalDebit: number;
+  /** Gross cash/bank credits in the period (outflows) */
+  totalCredit: number;
+  /** totalDebit − totalCredit */
+  net: number;
 }
 
 export async function getCashFlow(start: string, end: string): Promise<CashFlow> {
@@ -216,6 +222,8 @@ export async function getCashFlow(start: string, end: string): Promise<CashFlow>
   let operating = 0;
   let financing = 0;
   let investing = 0;
+  let totalDebit = 0;
+  let totalCredit = 0;
 
   const isCash = (code: number) => code === CODES.CASH || code === CODES.BANK;
 
@@ -231,6 +239,8 @@ export async function getCashFlow(start: string, end: string): Promise<CashFlow>
     let hasCash = false;
     for (const l of e.lines) {
       if (isCash(l.accountCode)) {
+        totalDebit += l.debit;
+        totalCredit += l.credit;
         cashDelta += l.debit - l.credit;
         hasCash = true;
       }
@@ -276,7 +286,17 @@ export async function getCashFlow(start: string, end: string): Promise<CashFlow>
     else operating += cashDelta;
   });
 
-  return { opening, operating, investing, financing, netChange, closing };
+  return {
+    opening,
+    operating,
+    investing,
+    financing,
+    netChange,
+    closing,
+    totalDebit,
+    totalCredit,
+    net: subtractMoney(totalDebit, totalCredit),
+  };
 }
 
 async function cashAndBankBalance(asOf: string): Promise<number> {
