@@ -11,6 +11,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { ui } from '@/lib/ui-classes';
 import { backdropVariants, fabItemVariants, springSnappy } from '@/lib/motion';
 import { haptics } from '@/lib/haptics';
 
@@ -61,7 +62,7 @@ export function FABMenu({ items }: { items: FABMenuItem[] }) {
         )}
       </AnimatePresence>
 
-      <div className="no-print fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom,0px))] right-3 z-40 flex flex-col items-end gap-2">
+      <div className={cn(ui.fabAnchor, 'flex flex-col items-end gap-2')}>
         <AnimatePresence>
           {open &&
             items.map((item, index) => (
@@ -95,9 +96,7 @@ export function FABMenu({ items }: { items: FABMenuItem[] }) {
           whileTap={{ scale: 0.9 }}
           animate={{ rotate: open ? 45 : 0 }}
           transition={springSnappy}
-          className={cn(
-            'flex h-12 w-12 min-h-[48px] min-w-[48px] items-center justify-center rounded-2xl bg-brand shadow-lg shadow-brand/30 transition-colors hover:bg-brand-hover',
-          )}
+          className={ui.fabButton}
         >
           <Plus className="h-6 w-6 text-white" />
         </motion.button>

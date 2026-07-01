@@ -3,6 +3,8 @@ import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { springSnappy } from '@/lib/motion';
 import { haptics } from '@/lib/haptics';
+import { cn } from '@/lib/utils';
+import { ui } from '@/lib/ui-classes';
 
 interface FABProps {
   /** Navigate to this route on tap. */
@@ -29,7 +31,7 @@ export function FAB({ to, onClick, label = 'Add' }: FABProps) {
       transition={springSnappy}
       whileTap={{ scale: 0.9 }}
       whileHover={{ scale: 1.04 }}
-      className="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom,0px))] right-3 z-30 flex h-12 w-12 min-h-[48px] min-w-[48px] items-center justify-center rounded-2xl bg-brand shadow-lg shadow-brand/30 transition-colors hover:bg-brand-hover"
+      className={cn(ui.fabAnchor, ui.fabButton)}
     >
       <Plus className="h-6 w-6 text-white" />
     </motion.button>

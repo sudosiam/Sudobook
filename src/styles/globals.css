@@ -51,7 +51,9 @@
   --shadow-elev-2: 0 10px 28px -6px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.35);
   --shadow-glow-brand: 0 8px 28px -6px rgb(59 130 246 / 0.35);
   --hairline-top: inset 0 1px 0 0 rgb(255 255 255 / 0.05);
-  --fab-clearance: calc(1.25rem + 3rem + env(safe-area-inset-bottom, 0px));
+  --fab-bottom: calc(1.75rem + env(safe-area-inset-bottom, 0px));
+  --fab-right: 1.25rem;
+  --fab-clearance: calc(1.75rem + 3rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* ---------- Light theme — clean premium Android light ---------- */
@@ -78,7 +80,9 @@
   --shadow-elev-2: 0 10px 28px -8px rgb(24 24 27 / 0.16), 0 2px 8px rgb(24 24 27 / 0.06);
   --shadow-glow-brand: 0 8px 28px -8px rgb(37 99 235 / 0.28);
   --hairline-top: inset 0 1px 0 0 rgb(255 255 255 / 0.6);
-  --fab-clearance: calc(1.25rem + 3rem + env(safe-area-inset-bottom, 0px));
+  --fab-bottom: calc(1.75rem + env(safe-area-inset-bottom, 0px));
+  --fab-right: 1.25rem;
+  --fab-clearance: calc(1.75rem + 3rem + env(safe-area-inset-bottom, 0px));
 }
 
 html {

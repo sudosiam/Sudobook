@@ -3,8 +3,10 @@ import { db } from '@/lib/db';
 import {
   getDashboardMetrics,
   getMonthlySeries,
+  getNetWorthSeries,
   type DashboardMetrics,
   type MonthPoint,
+  type NetWorthPoint,
 } from '@/lib/reports';
 import { fyDateRange } from '@/lib/sequences';
 import { useAppStore } from '@/store/useAppStore';
@@ -14,6 +16,7 @@ import { usePeriodStore, periodRange } from '@/store/usePeriodStore';
 export function useFinancials(): {
   metrics: DashboardMetrics | undefined;
   series: MonthPoint[] | undefined;
+  netWorthSeries: NetWorthPoint[] | undefined;
 } {
   const currentFY = useAppStore((s) => s.currentFY);
   const { mode, year, month } = usePeriodStore();
@@ -31,11 +34,17 @@ export function useFinancials(): {
 
   const series = useLiveQuery(async () => {
     await db.journalEntries.count();
-    return getMonthlySeries(6);
+    return getMonthlySeries(12);
+  }, []);
+
+  const netWorthSeries = useLiveQuery(async () => {
+    await db.journalEntries.count();
+    return getNetWorthSeries(12);
   }, []);
 
   return {
     metrics,
     series,
+    netWorthSeries,
   };
 }

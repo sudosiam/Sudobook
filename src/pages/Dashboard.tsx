@@ -11,22 +11,27 @@ import { useFinancials } from '@/hooks/useFinancials';
 import { useAppStore } from '@/store/useAppStore';
 import { usePeriodStore } from '@/store/usePeriodStore';
 
-const RevenueChart = lazy(async () => {
-  const mod = await import('@/components/charts/RevenueChart');
-  return { default: mod.RevenueChart };
+const NetWorthChart = lazy(async () => {
+  const mod = await import('@/components/charts/NetWorthChart');
+  return { default: mod.NetWorthChart };
+});
+
+const ProfitTrendChart = lazy(async () => {
+  const mod = await import('@/components/charts/ProfitTrendChart');
+  return { default: mod.ProfitTrendChart };
 });
 
 export default function Dashboard() {
-  const { metrics, series } = useFinancials();
+  const { metrics, series, netWorthSeries } = useFinancials();
   const currentFY = useAppStore((s) => s.currentFY);
   const { mode } = usePeriodStore();
 
-  const loading = !metrics || series === undefined;
+  const loading = !metrics || series === undefined || netWorthSeries === undefined;
 
   return (
     <>
       <TopBar
-        title="Sudo Books"
+        title="Sudo"
         right={<PeriodFilter placement="header" />}
       />
       <PageContainer>
@@ -34,6 +39,7 @@ export default function Dashboard() {
           <div className="page-stack pb-1">
             <Skeleton className="h-20 rounded-2xl" />
             <SkeletonStatGrid count={8} />
+            <SkeletonChartCard />
             <SkeletonChartCard />
           </div>
         ) : (
@@ -61,9 +67,16 @@ export default function Dashboard() {
             </RevealItem>
 
             <RevealItem className="card">
-              <h2 className="mb-2 text-sm font-semibold text-foreground">Last 6 Months</h2>
-              <Suspense fallback={<Skeleton className="h-[220px] rounded-lg" />}>
-                <RevenueChart data={series} />
+              <h2 className="mb-2 text-sm font-semibold text-foreground">Net Worth Trend</h2>
+              <Suspense fallback={<Skeleton className="h-[176px] rounded-lg" />}>
+                <NetWorthChart data={netWorthSeries} />
+              </Suspense>
+            </RevealItem>
+
+            <RevealItem className="card">
+              <h2 className="mb-2 text-sm font-semibold text-foreground">Profit vs Expenses</h2>
+              <Suspense fallback={<Skeleton className="h-[200px] rounded-lg" />}>
+                <ProfitTrendChart data={series} />
               </Suspense>
             </RevealItem>
           </Reveal>
