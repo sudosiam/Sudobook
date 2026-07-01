@@ -8,11 +8,28 @@ export interface CategorySeed {
   skuPrefix: string;
 }
 
+/** Fixed default category UUIDs — hex-only (required by Postgres `uuid` type). */
+const DEFAULT_CATEGORY_UUIDS: Record<string, string> = {
+  escooter: '0ca70001-0000-4000-8000-000000000001',
+  erickshaw: '0ca70002-0000-4000-8000-000000000002',
+  battery: '0ca70003-0000-4000-8000-000000000003',
+  part: '0ca70004-0000-4000-8000-000000000004',
+  other: '0ca70005-0000-4000-8000-000000000005',
+};
+
 /**
  * Deterministic UUID for a default category slug so every device seeds the
  * exact same primary key (like accountUuid for chart-of-accounts codes).
  */
 export function categoryUuid(slug: string): string {
+  const key = slug.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const id = DEFAULT_CATEGORY_UUIDS[key];
+  if (!id) throw new Error(`Unknown default category slug: ${slug}`);
+  return id;
+}
+
+/** Old broken ids used letters outside hex in the uuid tail — invalid for Supabase. */
+export function brokenCategoryUuid(slug: string): string {
   const tail = slug
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')

@@ -13,6 +13,10 @@ import {
   migrateCategorySlugIds,
 } from '@/lib/migrations/categorySlugToUuid';
 import {
+  CATEGORY_UUID_HEX_MIGRATION,
+  migrateCategoryUuidHexFix,
+} from '@/lib/migrations/categoryUuidHexFix';
+import {
   RETRY_FAILED_SYNC_MIGRATION,
   retryFailedSyncQueue,
 } from '@/lib/migrations/retryFailedSyncQueue';
@@ -145,6 +149,10 @@ export async function runMigrations(): Promise<void> {
 
   if (!done.has(CATEGORY_SLUG_MIGRATION)) {
     await migrateCategorySlugIds();
+  }
+
+  if (!done.has(CATEGORY_UUID_HEX_MIGRATION)) {
+    await migrateCategoryUuidHexFix();
   }
 
   if (!done.has(RETRY_FAILED_SYNC_MIGRATION)) {
