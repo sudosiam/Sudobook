@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { generateUuid } from '@/lib/utils';
+import { haptics } from '@/lib/haptics';
 
 export type ToastKind = 'success' | 'error' | 'info';
 
@@ -28,7 +29,13 @@ export const useToastStore = create<ToastState>((set) => ({
 }));
 
 export const toast = {
-  success: (message: string) => useToastStore.getState().push('success', message),
-  error: (message: string) => useToastStore.getState().push('error', message),
+  success: (message: string) => {
+    haptics.success();
+    useToastStore.getState().push('success', message);
+  },
+  error: (message: string) => {
+    haptics.warning();
+    useToastStore.getState().push('error', message);
+  },
   info: (message: string) => useToastStore.getState().push('info', message),
 };

@@ -12,7 +12,7 @@ import { MoneyDisplay } from '@/components/common/MoneyDisplay';
 import { StatCard } from '@/components/common/StatCard';
 import { EntityActions } from '@/components/common/EntityActions';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
-import { Button, Field, FormDateInput, Input } from '@/components/common/Field';
+import { Button, Field, FormDateInput, Input, QtyInput } from '@/components/common/Field';
 import { Modal } from '@/components/common/Modal';
 import { ProductForm } from '@/components/forms/ProductForm';
 import { db } from '@/lib/db';
@@ -20,6 +20,7 @@ import { updateProduct } from '@/lib/entities';
 import { multiplyMoney } from '@/lib/money';
 import { adjustStock } from '@/lib/transactions';
 import { stockAdjustmentSchema, type StockAdjustmentFormData } from '@/lib/validators';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export default function ProductDetail() {
@@ -55,7 +56,7 @@ export default function ProductDetail() {
       setOpen(false);
       reset();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(getErrorMessage(err, 'Failed'));
     }
   };
 
@@ -65,7 +66,7 @@ export default function ProductDetail() {
       toast.success('Product removed');
       navigate('/inventory');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(getErrorMessage(err, 'Failed'));
     } finally {
       setDeleteOpen(false);
     }
@@ -142,7 +143,7 @@ export default function ProductDetail() {
             <FormDateInput name="date" control={control} />
           </Field>
           <Field label="New Quantity" error={errors.newQty?.message}>
-            <Input type="number" min={0} {...register('newQty', { valueAsNumber: true })} />
+            <QtyInput min={0} {...register('newQty', { valueAsNumber: true })} />
           </Field>
           <Field label="Reason" error={errors.note?.message}>
             <Input {...register('note')} placeholder="e.g. physical count correction" />

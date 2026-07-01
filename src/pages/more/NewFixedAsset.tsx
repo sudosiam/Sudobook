@@ -10,11 +10,12 @@ import { MoneyInput } from '@/components/common/MoneyInput';
 import { db } from '@/lib/db';
 import { fixedAssetPurchaseSchema, type FixedAssetPurchaseFormData } from '@/lib/validators';
 import { recordFixedAssetPurchase } from '@/lib/transactions';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export default function NewFixedAsset() {
   const navigate = useNavigate();
-  const banks = useLiveQuery(() => db.bankAccounts.filter((b) => b.isActive).toArray());
+  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
 
   const {
     register,
@@ -49,7 +50,7 @@ export default function NewFixedAsset() {
       navigate('/more');
     } catch (err) {
       console.error('[NewFixedAsset]', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to record fixed asset');
+      toast.error(getErrorMessage(err, 'Failed to record fixed asset'));
     }
   };
 

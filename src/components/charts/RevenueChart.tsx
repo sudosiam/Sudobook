@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { Bar, BarChart, Legend, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 import { toINR } from '@/lib/money';
 import { chartThemeColors, chartTooltipProps } from '@/lib/chartTheme';
@@ -16,11 +17,20 @@ export function RevenueChart({ data }: { data: MonthPoint[] }) {
   const theme = useThemeStore((s) => s.theme);
   const colors = chartThemeColors();
   const tooltip = chartTooltipProps(colors);
+  const gradientId = useId();
 
   return (
     <div>
       <ResponsiveContainer width="100%" height={220} key={theme}>
       <BarChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }} barGap={2} barCategoryGap="20%">
+        <defs>
+          {SERIES.map((s) => (
+            <linearGradient key={s.key} id={`${gradientId}-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={colors[s.colorKey]} stopOpacity={1} />
+              <stop offset="100%" stopColor={colors[s.colorKey]} stopOpacity={0.55} />
+            </linearGradient>
+          ))}
+        </defs>
         <XAxis
           dataKey="month"
           tick={{ fill: colors.muted, fontSize: 11 }}
@@ -42,7 +52,7 @@ export function RevenueChart({ data }: { data: MonthPoint[] }) {
             key={s.key}
             dataKey={s.key}
             name={s.label}
-            fill={colors[s.colorKey]}
+            fill={`url(#${gradientId}-${s.key})`}
             radius={[3, 3, 0, 0]}
             maxBarSize={14}
           />

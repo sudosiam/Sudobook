@@ -80,13 +80,24 @@ export interface Vendor {
   syncedAt?: string;
 }
 
-export type ProductCategory = 'escooter' | 'erickshaw' | 'battery' | 'part' | 'other';
+/** User-managed product category — replaces the old fixed 5-value enum so the
+ * shop owner can add/rename categories freely (e.g. "Helmets", "Chargers"). */
+export interface ProductCategory {
+  id: string; // UUID (deterministic for defaults, random for user-created)
+  name: string; // "E-Scooter"
+  skuPrefix: string; // "ESC" — used to auto-generate SKUs for this category
+  skuSeq: number; // last auto-generated sequence number for this category
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  syncedAt?: string;
+}
 
 export interface Product {
   id: string;
-  sku: string; // "ESC-SL-LI-60V"
+  sku: string; // "ESC-0001" — auto-generated from category prefix, or manual
   name: string;
-  category: ProductCategory;
+  category: string; // ProductCategory.id
   unit: string; // "pcs", "set", "kg"
   costPrice: number; // paise — last purchase cost
   sellingPrice: number; // paise — default selling price
@@ -288,6 +299,7 @@ class SudoBooksDB extends Dexie {
   customers!: Table<Customer, string>;
   vendors!: Table<Vendor, string>;
   products!: Table<Product, string>;
+  productCategories!: Table<ProductCategory, string>;
   sales!: Table<Sale, string>;
   purchases!: Table<Purchase, string>;
   expenses!: Table<Expense, string>;
@@ -332,10 +344,61 @@ class SudoBooksDB extends Dexie {
       syncQueue: 'id, table, status, timestamp',
       settings: 'id',
     });
+
+    this.version(3).stores({
+      accounts: 'id, code, type, parentCode, isActive',
+      journalEntries: 'id, date, entryType, status, linkedId',
+      customers: 'id, name, phone, isActive',
+      vendors: 'id, name, phone, isActive',
+      products: 'id, sku, category, isActive',
+      productCategories: 'id, name, isActive',
+      sales: 'id, saleNumber, date, customerId, status',
+      purchases: 'id, purchaseNumber, date, vendorId, status',
+      expenses: 'id, expenseNumber, date, accountCode',
+      recurringExpenses: 'id, isActive, dayOfMonth',
+      bankAccounts: 'id, name, accountId, isActive',
+      bankTransactions: 'id, bankAccountId, date, type, linkedId',
+      stockMovements: 'id, productId, date, type, linkedId',
+      syncQueue: 'id, table, status, timestamp',
+      settings: 'id',
+    });
   }
 }
 
 export const db = new SudoBooksDB();
+
+/**
+ * Multi-tab / multi-device schema-upgrade safety net.
+ *
+ * If this app is open in more than one tab (or as an installed PWA AND a
+ * browser tab at the same time) and one of them loads a newer build with a
+ * bumped Dexie version, the OLDER connection blocks the upgrade — and every
+ * subsequent read/write on the older tab starts throwing raw IndexedDB
+ * errors ("TransactionInactiveError", "DatabaseClosedError", etc). That's
+ * confusing and looks like random data-loss risk, so we handle both sides:
+ *
+ * - The OLDER tab closes its connection the moment a newer one asks to
+ *   upgrade, and tells the user to reload instead of silently failing.
+ * - The NEWER tab surfaces a warning if it had to wait on a blocked upgrade,
+ *   instead of hanging forever with no feedback.
+ */
+export let dbNeedsReload = false;
+const DB_OUTDATED_EVENT = 'sudobooks:db-outdated';
+
+db.on('versionchange', () => {
+  dbNeedsReload = true;
+  db.close();
+  window.dispatchEvent(new CustomEvent(DB_OUTDATED_EVENT));
+});
+
+db.on('blocked', () => {
+  console.warn('[db] Upgrade blocked by another open tab — waiting for it to close or reload.');
+});
+
+export function onDbOutdated(handler: () => void): () => void {
+  window.addEventListener(DB_OUTDATED_EVENT, handler);
+  return () => window.removeEventListener(DB_OUTDATED_EVENT, handler);
+}
 
 /** Current ISO timestamp helper — the ONLY way we generate timestamps. */
 export const now = (): string => new Date().toISOString();

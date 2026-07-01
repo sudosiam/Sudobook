@@ -18,6 +18,7 @@ import { db } from '@/lib/db';
 import { updateCustomer } from '@/lib/entities';
 import { getCustomerBalance } from '@/lib/reports';
 import { receiveSalePayment } from '@/lib/transactions';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export default function CustomerDetail() {
@@ -28,7 +29,7 @@ export default function CustomerDetail() {
     () => db.sales.where('customerId').equals(id).reverse().sortBy('date'),
     [id],
   );
-  const banks = useLiveQuery(() => db.bankAccounts.filter((b) => b.isActive).toArray());
+  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
   const balance = useLiveQuery(async () => {
     await db.sales.count();
     return getCustomerBalance(id);
@@ -57,7 +58,7 @@ export default function CustomerDetail() {
       toast.success('Customer removed');
       navigate('/customers');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(getErrorMessage(err, 'Failed'));
     } finally {
       setDeleteOpen(false);
     }
@@ -180,7 +181,7 @@ export default function CustomerDetail() {
             setPayDue(0);
           } catch (err) {
             console.error('[CustomerDetail.handlePay]', err);
-            toast.error(err instanceof Error ? err.message : 'Failed');
+            toast.error(getErrorMessage(err, 'Failed'));
             throw err;
           }
         }}

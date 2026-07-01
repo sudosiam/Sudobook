@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -7,16 +7,23 @@ import { Plus, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { TopBar } from '@/components/layout/TopBar';
 import { PageContainer } from '@/components/layout/PageContainer';
-import { Button, Field, FormDateInput, Input, Select, Textarea } from '@/components/common/Field';
+import { Button, Field, FormDateInput, QtyInput, Select, Textarea } from '@/components/common/Field';
 import { CustomerNameInput } from '@/components/forms/CustomerNameInput';
 import { MoneyInput } from '@/components/common/MoneyInput';
 import { MoneyDisplay } from '@/components/common/MoneyDisplay';
+import { DraftBanner } from '@/components/common/DraftBanner';
 import { db, type PaymentMethod } from '@/lib/db';
 import { saleSchema, type SaleFormData } from '@/lib/validators';
 import { recordSale } from '@/lib/transactions';
 import { findOrCreateCustomer } from '@/lib/entities';
 import { addMoney, multiplyMoney, subtractMoney, toINR } from '@/lib/money';
+import { getErrorMessage } from '@/lib/errors';
+import { useDraft, type DraftEnvelope } from '@/hooks/useDraft';
 import { toast } from '@/store/useToast';
+
+function isSaleDraftBlank(v: SaleFormData): boolean {
+  return !v.customerName?.trim() && (!v.items || v.items.length === 0) && !v.notes?.trim();
+}
 
 function resolveSalePayment(
   channel: 'cash' | 'bank' | 'upi',
@@ -31,9 +38,9 @@ function resolveSalePayment(
 
 export default function NewSale() {
   const navigate = useNavigate();
-  const activeProducts = useLiveQuery(() => db.products.filter((p) => p.isActive).toArray());
-  const customers = useLiveQuery(() => db.customers.filter((c) => c.isActive).toArray());
-  const banks = useLiveQuery(() => db.bankAccounts.filter((b) => b.isActive).toArray());
+  const activeProducts = useLiveQuery(() => db.products.where('isActive').equals(1).toArray());
+  const customers = useLiveQuery(() => db.customers.where('isActive').equals(1).toArray());
+  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
 
   const productList = activeProducts ?? [];
 
@@ -43,6 +50,7 @@ export default function NewSale() {
     handleSubmit,
     watch,
     setValue,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm<SaleFormData>({
     resolver: zodResolver(saleSchema),
@@ -55,6 +63,19 @@ export default function NewSale() {
       paidAmount: 0,
     },
   });
+
+  const { loadDraft, saveDraft, clearDraft } = useDraft<SaleFormData>('new-sale', isSaleDraftBlank);
+  const [draftPrompt, setDraftPrompt] = useState<DraftEnvelope<SaleFormData> | null>(null);
+
+  useEffect(() => {
+    setDraftPrompt(loadDraft());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const subscription = watch((values) => saveDraft(values as SaleFormData));
+    return () => subscription.unsubscribe();
+  }, [watch, saveDraft]);
 
   const { fields, append, remove } = useFieldArray({ control, name: 'items' });
   const items = watch('items');
@@ -90,14 +111,13 @@ export default function NewSale() {
   }, [total, paidAmount, setValue]);
 
   const addItem = () => {
-    const p = productList[0];
     append({
-      productId: p?.id ?? '',
-      productName: p?.name ?? '',
+      productId: '',
+      productName: '',
       qty: 1,
-      unitPrice: p?.sellingPrice ?? 0,
-      costPrice: p?.costPrice ?? 0,
-      total: p?.sellingPrice ?? 0,
+      unitPrice: 0,
+      costPrice: 0,
+      total: 0,
     });
   };
 
@@ -138,11 +158,12 @@ export default function NewSale() {
         paidAmount: resolvedPaid,
         notes: data.notes,
       });
+      clearDraft();
       toast.success('Sale recorded');
       navigate(`/sales/${id}`);
     } catch (err) {
       console.error('[NewSale]', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to record sale');
+      toast.error(getErrorMessage(err, 'Failed to record sale'));
     }
   };
 
@@ -153,6 +174,21 @@ export default function NewSale() {
     <>
       <TopBar title="New Sale" />
       <PageContainer>
+        {draftPrompt && (
+          <div className="mb-3">
+            <DraftBanner
+              savedAt={draftPrompt.savedAt}
+              onRestore={() => {
+                reset(draftPrompt.values);
+                setDraftPrompt(null);
+              }}
+              onDiscard={() => {
+                clearDraft();
+                setDraftPrompt(null);
+              }}
+            />
+          </div>
+        )}
         <form onSubmit={handleSubmit(onSubmit)} className="page-stack">
           <Field label="Date" error={errors.date?.message}>
             <FormDateInput name="date" control={control} />
@@ -198,6 +234,7 @@ export default function NewSale() {
                         }
                       }}
                     >
+                      <option value="">Select product</option>
                       {productList.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name} ({p.stockQty})
@@ -214,12 +251,10 @@ export default function NewSale() {
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <Field label="Qty">
-                      <Input
-                        type="number"
+                      <QtyInput
                         value={items?.[i]?.qty ?? 1}
-                        min={1}
                         onChange={(e) => {
-                          const qty = Math.max(1, Number(e.target.value) || 1);
+                          const qty = Math.max(1, Number(e.target.value.replace(/\D/g, '')) || 1);
                           setValue(`items.${i}.qty`, qty);
                           setValue(`items.${i}.total`, multiplyMoney(items?.[i]?.unitPrice || 0, qty));
                         }}

@@ -101,7 +101,7 @@ export async function postRecurringForMonth(
 /** Post all active recurring expenses due for the current month. */
 export async function postDueRecurringExpenses(): Promise<number> {
   const monthKey = currentMonthKey();
-  const templates = await db.recurringExpenses.filter((r) => r.isActive).toArray();
+  const templates = await db.recurringExpenses.where('isActive').equals(1).toArray();
   let count = 0;
   for (const t of templates) {
     const id = await postRecurringForMonth(t, monthKey);

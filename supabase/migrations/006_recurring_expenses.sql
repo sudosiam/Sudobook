@@ -9,6 +9,8 @@ create table if not exists public.recurring_expenses (
 
 alter table public.recurring_expenses enable row level security;
 drop policy if exists "own rows" on public.recurring_expenses;
+create policy "own rows" on public.recurring_expenses for all
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
 grant select, insert, update, delete on public.recurring_expenses to authenticated;
 grant select, insert, update, delete on public.recurring_expenses to service_role;
 

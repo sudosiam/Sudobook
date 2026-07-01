@@ -18,6 +18,7 @@ import { db } from '@/lib/db';
 import { updateVendor } from '@/lib/entities';
 import { getVendorBalance } from '@/lib/reports';
 import { payPurchase } from '@/lib/transactions';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export default function VendorDetail() {
@@ -28,7 +29,7 @@ export default function VendorDetail() {
     () => db.purchases.where('vendorId').equals(id).reverse().sortBy('date'),
     [id],
   );
-  const banks = useLiveQuery(() => db.bankAccounts.filter((b) => b.isActive).toArray());
+  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
   const balance = useLiveQuery(async () => {
     await db.purchases.count();
     return getVendorBalance(id);
@@ -57,7 +58,7 @@ export default function VendorDetail() {
       toast.success('Vendor removed');
       navigate('/vendors');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(getErrorMessage(err, 'Failed'));
     } finally {
       setDeleteOpen(false);
     }
@@ -168,7 +169,7 @@ export default function VendorDetail() {
             setPayDue(0);
           } catch (err) {
             console.error('[VendorDetail.handlePay]', err);
-            toast.error(err instanceof Error ? err.message : 'Failed');
+            toast.error(getErrorMessage(err, 'Failed'));
             throw err;
           }
         }}

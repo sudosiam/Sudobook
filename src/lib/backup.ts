@@ -7,6 +7,7 @@ const TABLES = [
   'customers',
   'vendors',
   'products',
+  'productCategories',
   'sales',
   'purchases',
   'expenses',
@@ -24,6 +25,7 @@ const REMOTE_TABLE: Record<string, string> = {
   customers: 'customers',
   vendors: 'vendors',
   products: 'products',
+  productCategories: 'product_categories',
   sales: 'sales',
   purchases: 'purchases',
   expenses: 'expenses',
@@ -48,12 +50,12 @@ export async function exportBackup(): Promise<BackupFile> {
   return { app: 'sudo-books', version: 1, exportedAt: new Date().toISOString(), data };
 }
 
-export function downloadBackup(backup: BackupFile): void {
+export function downloadBackup(backup: BackupFile, filenamePrefix = 'sudo-books-backup'): void {
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `sudo-books-backup-${backup.exportedAt.slice(0, 10)}.json`;
+  a.download = `${filenamePrefix}-${backup.exportedAt.slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }

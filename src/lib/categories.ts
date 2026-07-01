@@ -1,0 +1,137 @@
+import { db, now, uuid, type ProductCategory } from '@/lib/db';
+import { enqueueSync } from '@/lib/sync';
+
+export interface CategorySeed {
+  id: string; // deterministic UUID — same on every device (Supabase requires uuid)
+  legacySlug?: string; // old slug id before category-slug-to-uuid-v1 migration
+  name: string;
+  skuPrefix: string;
+}
+
+/**
+ * Deterministic UUID for a default category slug so every device seeds the
+ * exact same primary key (like accountUuid for chart-of-accounts codes).
+ */
+export function categoryUuid(slug: string): string {
+  const tail = slug
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .padEnd(12, '0')
+    .slice(0, 12);
+  return `0cat0000-0000-4000-8000-${tail}`;
+}
+
+/**
+ * Default categories seeded on first run. IDs are deterministic UUIDs so they
+ * sync cleanly to Supabase; legacySlug documents the old enum/slug values for
+ * the one-time Dexie migration.
+ */
+export const DEFAULT_CATEGORIES: CategorySeed[] = [
+  { id: categoryUuid('escooter'), legacySlug: 'escooter', name: 'E-Scooter', skuPrefix: 'ESC' },
+  { id: categoryUuid('erickshaw'), legacySlug: 'erickshaw', name: 'E-Rickshaw', skuPrefix: 'ERK' },
+  { id: categoryUuid('battery'), legacySlug: 'battery', name: 'Battery', skuPrefix: 'BAT' },
+  { id: categoryUuid('part'), legacySlug: 'part', name: 'Part', skuPrefix: 'PRT' },
+  { id: categoryUuid('other'), legacySlug: 'other', name: 'Other', skuPrefix: 'OTH' },
+];
+
+/** Seed default categories that don't exist yet — safe to call repeatedly. */
+export async function syncDefaultCategories(): Promise<void> {
+  await db.transaction('rw', db.productCategories, db.syncQueue, async () => {
+    for (const seed of DEFAULT_CATEGORIES) {
+      const existing = await db.productCategories.get(seed.id);
+      if (existing) continue;
+      // Legacy slug row — category-slug-to-uuid migration will re-key it.
+      if (seed.legacySlug && (await db.productCategories.get(seed.legacySlug))) continue;
+
+      const category: ProductCategory = {
+        id: seed.id,
+        name: seed.name,
+        skuPrefix: seed.skuPrefix,
+        skuSeq: 0,
+        isActive: true,
+        createdAt: now(),
+        updatedAt: now(),
+      };
+      await db.productCategories.add(category);
+      await enqueueSync('product_categories', 'create', category.id, category);
+    }
+  });
+}
+
+function sanitizePrefix(input: string): string {
+  const cleaned = input
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 6);
+  return cleaned || 'GEN';
+}
+
+export interface NewCategoryInput {
+  name: string;
+  skuPrefix: string;
+}
+
+export async function createProductCategory(input: NewCategoryInput): Promise<string> {
+  const name = input.name.trim();
+  if (!name) throw new Error('Category name required');
+  const skuPrefix = sanitizePrefix(input.skuPrefix || name);
+
+  const id = uuid();
+  await db.transaction('rw', db.productCategories, db.syncQueue, async () => {
+    const dupe = await db.productCategories
+      .filter((c) => c.isActive && c.name.toLowerCase() === name.toLowerCase())
+      .first();
+    if (dupe) throw new Error(`Category "${name}" already exists`);
+
+    const category: ProductCategory = {
+      id,
+      name,
+      skuPrefix,
+      skuSeq: 0,
+      isActive: true,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    await db.productCategories.add(category);
+    await enqueueSync('product_categories', 'create', id, category);
+  });
+  return id;
+}
+
+export async function updateProductCategory(
+  id: string,
+  patch: Partial<Pick<ProductCategory, 'name' | 'skuPrefix' | 'isActive'>>,
+): Promise<void> {
+  await db.transaction('rw', db.productCategories, db.syncQueue, async () => {
+    const next: Partial<ProductCategory> = { ...patch, updatedAt: now() };
+    if (patch.skuPrefix) next.skuPrefix = sanitizePrefix(patch.skuPrefix);
+    await db.productCategories.update(id, next);
+    const updated = await db.productCategories.get(id);
+    if (updated) await enqueueSync('product_categories', 'update', id, updated);
+  });
+}
+
+function formatSku(prefix: string, seq: number): string {
+  return `${prefix}-${String(seq).padStart(4, '0')}`;
+}
+
+/** Peek the next auto-SKU for a category WITHOUT consuming it (for live preview in a form). */
+export async function previewNextSku(categoryId: string): Promise<string> {
+  const cat = await db.productCategories.get(categoryId);
+  if (!cat) return '';
+  return formatSku(cat.skuPrefix, (cat.skuSeq ?? 0) + 1);
+}
+
+/**
+ * Atomically claim the next auto-SKU for a category. Caller MUST already be
+ * inside a Dexie rw transaction that includes productCategories and syncQueue.
+ */
+export async function claimNextSkuTx(categoryId: string): Promise<string> {
+  const cat = await db.productCategories.get(categoryId);
+  if (!cat) throw new Error('Category not found');
+  const nextSeq = (cat.skuSeq ?? 0) + 1;
+  await db.productCategories.update(categoryId, { skuSeq: nextSeq, updatedAt: now() });
+  const updated = await db.productCategories.get(categoryId);
+  if (updated) await enqueueSync('product_categories', 'update', categoryId, updated);
+  return formatSku(cat.skuPrefix, nextSeq);
+}

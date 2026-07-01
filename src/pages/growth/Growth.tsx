@@ -12,6 +12,27 @@ import { format, startOfMonth, subMonths } from 'date-fns';
 import { db } from '@/lib/db';
 import { getExpenseReport, getMonthlySeries, getNetWorthSeries, getSalesMix, getTopCustomers, getAverageSaleValue } from '@/lib/reports';
 import { addMoney } from '@/lib/money';
+import { cn } from '@/lib/utils';
+
+/** Month-over-month % change; null when prior month was zero and current is also zero. */
+function momPct(current: number, previous: number): number | null {
+  if (previous === 0) {
+    if (current === 0) return null;
+    return 100;
+  }
+  return Math.round(((current - previous) / previous) * 10) / 10;
+}
+
+function MomBadge({ label, pct }: { label: string; pct: number | null }) {
+  if (pct === null) return null;
+  const positive = pct >= 0;
+  return (
+    <p className={cn('mt-1 text-xs font-medium', positive ? 'text-success' : 'text-danger')}>
+      {label} {positive ? '+' : ''}
+      {pct}% vs last month
+    </p>
+  );
+}
 
 export default function Growth() {
   const series = useLiveQuery(async () => {
@@ -67,6 +88,17 @@ export default function Growth() {
   const cashPct = mixTotal > 0 ? Math.round((salesMix.cashTotal * 100) / mixTotal) : 0;
   const creditPct = mixTotal > 0 ? 100 - cashPct : 0;
 
+  const lastMonth = series[series.length - 1];
+  const prevMonth = series.length >= 2 ? series[series.length - 2] : null;
+  const lastNetWorth = netWorthSeries[netWorthSeries.length - 1]?.netWorth ?? 0;
+  const prevNetWorth =
+    netWorthSeries.length >= 2 ? netWorthSeries[netWorthSeries.length - 2].netWorth : 0;
+
+  const revenueMom = prevMonth ? momPct(lastMonth.revenue, prevMonth.revenue) : null;
+  const profitMom = prevMonth ? momPct(lastMonth.profit, prevMonth.profit) : null;
+  const expenseMom = prevMonth ? momPct(lastMonth.expenses, prevMonth.expenses) : null;
+  const netWorthMom = momPct(lastNetWorth, prevNetWorth);
+
   return (
     <>
       <TopBar title="Growth" right={<PrintIconButton />} />
@@ -74,18 +106,30 @@ export default function Growth() {
         <div className="print-area page-stack">
           <div className="card">
             <p className="text-xs uppercase tracking-wider text-muted">Revenue · Last 12 Months</p>
-            <MoneyDisplay amount={totalRevenue} tone="income" className="mb-3 block text-xl font-bold" />
-            <RevenueChart data={series} />
+            <MoneyDisplay amount={totalRevenue} tone="income" className="mb-1 block text-xl font-bold" />
+            <MomBadge label="Revenue" pct={revenueMom} />
+            <div className="mt-3">
+              <RevenueChart data={series} />
+            </div>
           </div>
 
           <div className="card">
-            <h2 className="mb-3 text-sm font-semibold text-foreground">Net Worth Trend</h2>
-            <NetWorthChart data={netWorthSeries} />
+            <h2 className="mb-1 text-sm font-semibold text-foreground">Net Worth Trend</h2>
+            <MomBadge label="Net worth" pct={netWorthMom} />
+            <div className="mt-3">
+              <NetWorthChart data={netWorthSeries} />
+            </div>
           </div>
 
           <div className="card">
-            <h2 className="mb-3 text-sm font-semibold text-foreground">Profit vs Expenses</h2>
-            <ProfitTrendChart data={series} />
+            <h2 className="mb-1 text-sm font-semibold text-foreground">Profit vs Expenses</h2>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <MomBadge label="Net profit" pct={profitMom} />
+              <MomBadge label="Operating exp." pct={expenseMom} />
+            </div>
+            <div className="mt-3">
+              <ProfitTrendChart data={series} />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

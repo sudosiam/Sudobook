@@ -6,6 +6,7 @@ import { Button, Field, Input, Textarea } from '@/components/common/Field';
 import { MoneyInput } from '@/components/common/MoneyInput';
 import { createVendor, updateVendor } from '@/lib/entities';
 import type { Vendor } from '@/lib/db';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export function VendorForm({
@@ -61,7 +62,7 @@ export function VendorForm({
       }
     } catch (err) {
       console.error('[VendorForm]', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to save vendor');
+      toast.error(getErrorMessage(err, 'Failed to save vendor'));
     }
   };
 

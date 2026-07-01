@@ -10,19 +10,15 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Field';
 import { BankAccountForm } from '@/components/forms/BankAccountForm';
-import { BankTransferForm } from '@/pages/banking/BankTransfer';
-import { ManualBankEntryForm } from '@/pages/banking/ManualBankEntry';
 import { db } from '@/lib/db';
 import { getBankBalance } from '@/lib/reports';
 import { addMoney } from '@/lib/money';
 
 export default function BankingOverview() {
   const [addOpen, setAddOpen] = useState(false);
-  const [transferOpen, setTransferOpen] = useState(false);
-  const [entryOpen, setEntryOpen] = useState(false);
 
   const rows = useLiveQuery(async () => {
-    const banks = await db.bankAccounts.filter((b) => b.isActive).toArray();
+    const banks = await db.bankAccounts.where('isActive').equals(1).toArray();
     await db.bankTransactions.count();
     return Promise.all(banks.map(async (b) => ({ ...b, balance: await getBankBalance(b.id) })));
   });
@@ -42,12 +38,18 @@ export default function BankingOverview() {
           <Button variant="secondary" className="flex-col gap-1 px-2 text-xs" onClick={() => setAddOpen(true)}>
             <Plus className="h-5 w-5" /> Account
           </Button>
-          <Button variant="secondary" className="flex-col gap-1 px-2 text-xs" onClick={() => setTransferOpen(true)}>
+          <Link
+            to="/banking/transfer"
+            className="flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-xl border border-border-app bg-surface px-2 text-xs font-medium text-foreground active:bg-surface-hover"
+          >
             <ArrowLeftRight className="h-5 w-5" /> Transfer
-          </Button>
-          <Button variant="secondary" className="flex-col gap-1 px-2 text-xs" onClick={() => setEntryOpen(true)}>
+          </Link>
+          <Link
+            to="/banking/manual-entry"
+            className="flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-xl border border-border-app bg-surface px-2 text-xs font-medium text-foreground active:bg-surface-hover"
+          >
             <PenLine className="h-5 w-5" /> Manual Entry
-          </Button>
+          </Link>
         </div>
 
         {!rows ? (
@@ -77,12 +79,6 @@ export default function BankingOverview() {
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="New Account">
         <BankAccountForm onDone={() => setAddOpen(false)} />
-      </Modal>
-      <Modal open={transferOpen} onClose={() => setTransferOpen(false)} title="Transfer Funds">
-        <BankTransferForm onDone={() => setTransferOpen(false)} />
-      </Modal>
-      <Modal open={entryOpen} onClose={() => setEntryOpen(false)} title="Manual Bank Entry">
-        <ManualBankEntryForm onDone={() => setEntryOpen(false)} />
       </Modal>
     </>
   );

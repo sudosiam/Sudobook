@@ -1,5 +1,6 @@
 import {
   BarChart2,
+  Banknote,
   BookOpen,
   HandCoins,
   Home,
@@ -18,12 +19,14 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useRef } from 'react';
 import { db } from '@/lib/db';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
+import { backdropVariants, springSnappy } from '@/lib/motion';
 
 type NavItem = {
   to: string;
@@ -56,6 +59,7 @@ const navCategories: NavCategory[] = [
     items: [
       { to: '/purchases', label: 'Purchases', icon: ShoppingCart },
       { to: '/vendors', label: 'Vendors', icon: Truck },
+      { to: '/payments/payable', label: 'Pay Vendors', icon: Banknote },
     ],
   },
   {
@@ -157,24 +161,31 @@ export function Sidebar() {
 
   return (
     <>
-      {sidebarOpen && (
-        <button
-          type="button"
-          aria-label="Close menu"
-          className="no-print fixed inset-0 z-40 bg-black/60 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      <AnimatePresence>
+        {sidebarOpen && isMobile && (
+          <motion.button
+            type="button"
+            aria-label="Close menu"
+            className="no-print fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+            onClick={() => setSidebarOpen(false)}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            variants={backdropVariants}
+          />
+        )}
+      </AnimatePresence>
 
-      <aside
+      <motion.aside
         ref={asideRef}
         role={trapActive ? 'dialog' : undefined}
         aria-modal={trapActive ? true : undefined}
         aria-label={trapActive ? 'Main navigation' : undefined}
-        className={cn(
-          'no-print fixed inset-y-0 left-0 z-50 flex w-[15.5rem] flex-col border-r border-border-app/40 bg-app pt-safe shadow-xl transition-transform duration-200 md:static md:z-auto md:w-56 md:translate-x-0 md:shadow-none',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
-        )}
+        initial={false}
+        animate={{ x: isMobile ? (sidebarOpen ? 0 : '-100%') : 0 }}
+        transition={springSnappy}
+        style={{ willChange: 'transform' }}
+        className="no-print fixed inset-y-0 left-0 z-50 flex w-[15.5rem] flex-col border-r border-border-app/40 bg-app pt-safe shadow-xl md:static md:z-auto md:w-56 md:shadow-none"
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border-app/40 px-3">
           <div>
@@ -203,7 +214,7 @@ export function Sidebar() {
             ))}
           </div>
         </nav>
-      </aside>
+      </motion.aside>
     </>
   );
 }

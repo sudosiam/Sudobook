@@ -34,7 +34,7 @@ export default function OutstandingPayments() {
           <div className="page-stack">
             <div className="card">
               <p className="text-xs uppercase tracking-wider text-muted">Total Outstanding</p>
-              <MoneyDisplay amount={totalDue} tone="income" className="mt-1 block hero-money" />
+              <MoneyDisplay amount={totalDue} tone="partial" className="mt-1 block hero-money" />
             </div>
 
             <div className="list-shell">
@@ -51,7 +51,7 @@ export default function OutstandingPayments() {
                     </p>
                   </div>
                   <div className="ml-3 flex flex-col items-end gap-1">
-                    <MoneyDisplay amount={s.dueAmount} tone="income" className="text-sm font-semibold" />
+                    <MoneyDisplay amount={s.dueAmount} tone="partial" className="text-sm font-semibold" />
                     <StatusPill status={s.status} />
                   </div>
                 </Link>

@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { toINR } from '@/lib/money';
 import { chartPalette, chartThemeColors, chartTooltipProps } from '@/lib/chartTheme';
@@ -9,11 +10,20 @@ export function ExpenseChart({ data }: { data: { name: string; value: number }[]
   const colors = chartThemeColors();
   const palette = chartPalette(colors);
   const tooltip = chartTooltipProps(colors);
+  const gradientId = useId();
 
   return (
     <div>
       <ResponsiveContainer width="100%" height={220} key={theme}>
       <PieChart>
+        <defs>
+          {palette.map((color, i) => (
+            <linearGradient key={i} id={`${gradientId}-${i}`} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={1} />
+              <stop offset="100%" stopColor={color} stopOpacity={0.7} />
+            </linearGradient>
+          ))}
+        </defs>
         <Pie
           data={data}
           dataKey="value"
@@ -25,7 +35,7 @@ export function ExpenseChart({ data }: { data: { name: string; value: number }[]
           paddingAngle={2}
         >
           {data.map((_, i) => (
-            <Cell key={i} fill={palette[i % palette.length]} stroke={colors.app} />
+            <Cell key={i} fill={`url(#${gradientId}-${i % palette.length})`} stroke={colors.app} />
           ))}
         </Pie>
         <Tooltip

@@ -11,13 +11,27 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { Modal } from '@/components/common/Modal';
 import { FAB } from '@/components/common/FAB';
 import { CustomerForm } from '@/components/forms/CustomerForm';
-import { db } from '@/lib/db';
+import { db, type Customer } from '@/lib/db';
 import { getCustomerBalance } from '@/lib/reports';
+
+const PAGE_SIZE = 60;
+
+/** Balance for one page of customers only — avoids scanning sales for every
+ * customer up front when the list runs into the thousands. */
+function useVisibleBalances(customers: Customer[]) {
+  return useLiveQuery(async () => {
+    const pairs = await Promise.all(
+      customers.map(async (c) => [c.id, await getCustomerBalance(c.id)] as const),
+    );
+    return new Map(pairs);
+  }, [customers.map((c) => c.id).join(',')]);
+}
 
 export default function CustomersList() {
   const location = useLocation();
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
+  const [visible, setVisible] = useState(PAGE_SIZE);
 
   useEffect(() => {
     const state = location.state as { openNew?: boolean } | null;
@@ -27,17 +41,23 @@ export default function CustomersList() {
     }
   }, [location.state]);
 
-  const rows = useLiveQuery(async () => {
-    const customers = await db.customers.filter((c) => c.isActive).toArray();
-    await db.sales.count();
-    return Promise.all(
-      customers.map(async (c) => ({ ...c, balance: await getCustomerBalance(c.id) })),
-    );
-  });
+  const customers = useLiveQuery(() =>
+    db.customers
+      .where('isActive')
+      .equals(1)
+      .toArray()
+      .then((rows) => rows.sort((a, b) => a.name.localeCompare(b.name))),
+  );
 
-  const filtered = (rows ?? []).filter(
+  const filtered = (customers ?? []).filter(
     (c) => c.name.toLowerCase().includes(q.toLowerCase()) || c.phone.includes(q),
   );
+  const visibleRows = filtered.slice(0, visible);
+  const balances = useVisibleBalances(visibleRows);
+
+  useEffect(() => {
+    setVisible(PAGE_SIZE);
+  }, [q]);
 
   return (
     <>
@@ -46,29 +66,43 @@ export default function CustomersList() {
         <div className="mb-3">
           <SearchBar value={q} onChange={setQ} placeholder="Search customers…" />
         </div>
-        {!rows ? (
+        {!customers ? (
           <LoadingSpinner />
         ) : filtered.length === 0 ? (
           <EmptyState icon={Users} title="No customers yet" description="Add customers to track receivables." />
         ) : (
-          <div className="list-shell">
-            {filtered.map((c) => (
-              <Link
-                key={c.id}
-                to={`/customers/${c.id}`}
-                className="flex min-h-[52px] items-center justify-between border-b border-border-app px-3 py-2 last:border-0 active:bg-surface-hover"
+          <>
+            <div className="list-shell">
+              {visibleRows.map((c) => {
+                const balance = balances?.get(c.id) ?? 0;
+                return (
+                  <Link
+                    key={c.id}
+                    to={`/customers/${c.id}`}
+                    className="flex min-h-[52px] items-center justify-between border-b border-border-app px-3 py-2 last:border-0 active:bg-surface-hover"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
+                      <p className="mt-0.5 text-xs text-muted">{c.phone}</p>
+                    </div>
+                    <div className="ml-3 text-right">
+                      <MoneyDisplay amount={balance} className="text-sm font-semibold" tone={balance > 0 ? 'income' : 'neutral'} />
+                      <p className="text-xs text-muted">{balance > 0 ? 'owes you' : 'settled'}</p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+            {visible < filtered.length && (
+              <button
+                type="button"
+                onClick={() => setVisible((v) => v + PAGE_SIZE)}
+                className="mt-3 w-full rounded-xl border border-border-app/60 py-3 text-center text-sm font-medium text-muted active:bg-surface-hover"
               >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
-                  <p className="mt-0.5 text-xs text-muted">{c.phone}</p>
-                </div>
-                <div className="ml-3 text-right">
-                  <MoneyDisplay amount={c.balance} className="text-sm font-semibold" tone={c.balance > 0 ? 'income' : 'neutral'} />
-                  <p className="text-xs text-muted">{c.balance > 0 ? 'owes you' : 'settled'}</p>
-                </div>
-              </Link>
-            ))}
-          </div>
+                Load more ({filtered.length - visible} remaining)
+              </button>
+            )}
+          </>
         )}
       </PageContainer>
 

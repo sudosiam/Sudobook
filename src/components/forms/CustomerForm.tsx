@@ -6,6 +6,7 @@ import { Button, Field, Input, Textarea } from '@/components/common/Field';
 import { MoneyInput } from '@/components/common/MoneyInput';
 import { createCustomer, updateCustomer } from '@/lib/entities';
 import type { Customer } from '@/lib/db';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export function CustomerForm({
@@ -59,7 +60,7 @@ export function CustomerForm({
       }
     } catch (err) {
       console.error('[CustomerForm]', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to save customer');
+      toast.error(getErrorMessage(err, 'Failed to save customer'));
     }
   };
 

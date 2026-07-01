@@ -1,7 +1,9 @@
+import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { FOCUS_TRAP_ALLOW } from '@/hooks/useFocusTrap';
+import { popoverVariants } from '@/lib/motion';
 
 interface PopoverProps {
   open: boolean;
@@ -113,26 +115,34 @@ export function Popover({
     };
   }, [open, onClose]);
 
-  const panelNode =
-    open && panelStyle ? (
-      <div
-        ref={panelRef}
-        style={{ top: panelStyle.top, left: panelStyle.left, width: panelStyle.width }}
-        className={cn(
-          'fixed z-[100] overflow-hidden rounded-xl border border-border-app/60 bg-surface shadow-[0_8px_28px_rgba(0,0,0,0.45)]',
-          panelClassName,
-        )}
-        {...{ [FOCUS_TRAP_ALLOW]: '' }}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        {panel}
-      </div>
-    ) : null;
+  const panelNode = (
+    <AnimatePresence>
+      {open && panelStyle && (
+        <motion.div
+          style={{ top: panelStyle.top, left: panelStyle.left, width: panelStyle.width }}
+          className={cn(
+            'fixed z-[100] origin-top overflow-hidden rounded-xl border border-border-app/60 bg-surface shadow-[var(--shadow-elev-2)]',
+            panelClassName,
+          )}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          variants={popoverVariants}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {/* Ref on inner node — AnimatePresence reads child.props.ref and triggers React 18.3 warning on motion.div */}
+          <div ref={panelRef} className="h-full w-full" {...{ [FOCUS_TRAP_ALLOW]: '' }}>
+            {panel}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 
   return (
     <div ref={rootRef} className={cn('relative', className)}>
       {children}
-      {panelNode && createPortal(panelNode, document.body)}
+      {createPortal(panelNode, document.body)}
     </div>
   );
 }

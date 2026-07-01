@@ -147,13 +147,24 @@ export const vendorSchema = z.object({
 export const productSchema = z.object({
   sku: z.string().min(1, 'SKU required'),
   name: z.string().min(1, 'Name required'),
-  category: z.enum(['escooter', 'erickshaw', 'battery', 'part', 'other']),
+  category: z.string().min(1, 'Category required'),
   unit: z.string().min(1, 'Unit required'),
   costPrice: paise,
   sellingPrice: paise,
   stockQty: z.number().int().min(0),
   minStock: z.number().int().min(0),
 });
+
+export const productCategorySchema = z.object({
+  name: z.string().min(1, 'Name required'),
+  skuPrefix: z
+    .string()
+    .min(1, 'Prefix required')
+    .max(6, 'Max 6 characters')
+    .regex(/^[A-Za-z0-9]+$/, 'Letters and numbers only'),
+});
+
+export type ProductCategoryFormData = z.infer<typeof productCategorySchema>;
 
 export const bankAccountSchema = z.object({
   name: z.string().min(1, 'Name required'),

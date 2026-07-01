@@ -20,6 +20,8 @@ import {
 
 import { CODES } from '@/lib/coa';
 
+import { claimNextSkuTx } from '@/lib/categories';
+
 import { getFYStartYear } from '@/lib/sequences';
 
 import { postJournalEntryTx } from '@/lib/accounting';
@@ -49,6 +51,8 @@ const ENTITY_JOURNAL_STORES = [
   db.vendors,
 
   db.products,
+
+  db.productCategories,
 
   db.bankAccounts,
 
@@ -358,57 +362,41 @@ export async function updateVendor(
 
 export async function createProduct(data: ProductFormData): Promise<string> {
 
-  const sku = data.sku.trim();
-
-  if (sku) {
-
-    const existing = await db.products.where('sku').equals(sku).first();
-
-    if (existing) {
-
-      throw new Error(`SKU "${sku}" is already used by ${existing.name}`);
-
-    }
-
-  }
+  const manualSku = data.sku.trim();
 
   const id = uuid();
 
-  const product: Product = {
-
-    id,
-
-    sku: data.sku,
-
-    name: data.name,
-
-    category: data.category,
-
-    unit: data.unit,
-
-    costPrice: data.costPrice,
-
-    sellingPrice: data.sellingPrice,
-
-    stockQty: data.stockQty,
-
-    minStock: data.minStock,
-
-    isActive: true,
-
-    createdAt: now(),
-
-    updatedAt: now(),
-
-  };
-
-
-
   const openingValue = multiplyMoney(data.costPrice, data.stockQty);
+
+  let finalSku = '';
 
 
 
   await db.transaction('rw', ENTITY_JOURNAL_STORES, async () => {
+
+    // Always advance the category's counter (even for a manual SKU) so the
+    // next suggestion never collides — gaps are harmless, exactly like the
+    // sale/purchase/expense sequence counters.
+    const suggested = await claimNextSkuTx(data.category);
+    finalSku = manualSku || suggested;
+
+    const dupe = await db.products.where('sku').equals(finalSku).first();
+    if (dupe) throw new Error(`SKU "${finalSku}" is already used by ${dupe.name}`);
+
+    const product: Product = {
+      id,
+      sku: finalSku,
+      name: data.name,
+      category: data.category,
+      unit: data.unit,
+      costPrice: data.costPrice,
+      sellingPrice: data.sellingPrice,
+      stockQty: data.stockQty,
+      minStock: data.minStock,
+      isActive: true,
+      createdAt: now(),
+      updatedAt: now(),
+    };
 
     if (openingValue > 0) {
 
@@ -491,6 +479,11 @@ export async function updateProduct(
 ): Promise<void> {
 
   await db.transaction('rw', [db.products, db.syncQueue], async () => {
+
+    if (data.sku) {
+      const dupe = await db.products.where('sku').equals(data.sku).first();
+      if (dupe && dupe.id !== id) throw new Error(`SKU "${data.sku}" is already used by ${dupe.name}`);
+    }
 
     await db.products.update(id, { ...data, updatedAt: now() });
 

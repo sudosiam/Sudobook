@@ -16,6 +16,7 @@ import { RowActionButton } from '@/components/common/EntityActions';
 import { db } from '@/lib/db';
 import { usePeriodStore, periodRange } from '@/store/usePeriodStore';
 import { voidExpense } from '@/lib/transactions';
+import { getErrorMessage } from '@/lib/errors';
 import {
   deactivateRecurringExpense,
   postDueRecurringExpenses,
@@ -48,7 +49,7 @@ export default function ExpensesList() {
     [range?.start, range?.end, limit],
   );
 
-  const recurring = useLiveQuery(() => db.recurringExpenses.filter((r) => r.isActive).toArray());
+  const recurring = useLiveQuery(() => db.recurringExpenses.where('isActive').equals(1).toArray());
 
   const filtered = (expenses ?? []).filter(
     (e) =>
@@ -62,7 +63,7 @@ export default function ExpensesList() {
       const n = await postDueRecurringExpenses();
       toast.success(n > 0 ? `Posted ${n} recurring expense(s)` : 'Nothing due this month');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(getErrorMessage(err, 'Failed'));
     } finally {
       setBusy(false);
     }
@@ -76,7 +77,7 @@ export default function ExpensesList() {
       const expenseId = await postRecurringForMonth(template, monthKey);
       toast.success(expenseId ? 'Expense posted' : 'Already posted this month');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(getErrorMessage(err, 'Failed'));
     } finally {
       setBusy(false);
     }
@@ -88,21 +89,21 @@ export default function ExpensesList() {
       await deactivateRecurringExpense(removeRecurringId);
       toast.success('Template removed');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(getErrorMessage(err, 'Failed'));
     } finally {
       setRemoveRecurringId(null);
     }
   };
 
-  const handleVoid = async () => {
-    if (!voidId) return;
+  const handleVoid = async (reason?: string) => {
+    if (!voidId || !reason) return;
     try {
-      await voidExpense(voidId, 'Voided by user');
+      await voidExpense(voidId, reason);
       toast.success('Expense voided');
       setVoidId(null);
     } catch (err) {
       console.error('[handleVoid]', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to void expense');
+      toast.error(getErrorMessage(err, 'Failed to void expense'));
     }
   };
 
@@ -223,6 +224,8 @@ export default function ExpensesList() {
         message="This posts a reversing entry and refunds the bank/cash account. The record is kept for audit."
         confirmLabel="Void"
         danger
+        requireReason
+        reasonPlaceholder="Why is this expense being voided?"
         onConfirm={handleVoid}
         onCancel={() => setVoidId(null)}
       />

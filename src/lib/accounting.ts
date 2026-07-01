@@ -65,12 +65,13 @@ export async function postJournalEntryTx(entry: NewJournalEntry): Promise<string
  * journalEntries and syncQueue. Do not post a mirror reversal: balances only
  * sum `posted` entries, so a reversal plus void would double-apply the effect.
  */
-export async function voidJournalEntryTx(entryId: string, _reason: string): Promise<string> {
+export async function voidJournalEntryTx(entryId: string, reason: string): Promise<string> {
   const original = await db.journalEntries.get(entryId);
   if (!original) throw new Error('Journal entry not found');
   if (original.status === 'void') throw new Error('Entry already voided');
 
-  await db.journalEntries.update(entryId, { status: 'void', updatedAt: now() });
+  const description = `${original.description} — Void: ${reason}`;
+  await db.journalEntries.update(entryId, { status: 'void', description, updatedAt: now() });
   const updated = await db.journalEntries.get(entryId);
   if (updated) await enqueueSync('journal_entries', 'update', entryId, updated);
   return entryId;

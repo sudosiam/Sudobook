@@ -1,11 +1,16 @@
 import { db, now, type Account, type AppSettings, type BankAccount } from '@/lib/db';
 import { DEFAULT_ACCOUNTS, CODES, accountUuid, CASH_DRAWER_ID } from '@/lib/coa';
+import { syncDefaultCategories } from '@/lib/categories';
 import { getCurrentFY } from '@/lib/sequences';
 import { enqueueSync } from '@/lib/sync';
 import {
   VOID_REVERSAL_CLEANUP_MIGRATION,
   migrateVoidDoubleReversals,
 } from '@/lib/migrations/voidReversalCleanup';
+import {
+  CATEGORY_SLUG_MIGRATION,
+  migrateCategorySlugIds,
+} from '@/lib/migrations/categorySlugToUuid';
 
 /** Short random per-device code (e.g. "A3") used to keep document numbers unique across devices. */
 function makeDeviceId(): string {
@@ -34,6 +39,7 @@ export async function seedDatabase(): Promise<void> {
     'rw',
     db.accounts,
     db.bankAccounts,
+    db.productCategories,
     db.settings,
     db.syncQueue,
     async () => {
@@ -54,6 +60,8 @@ export async function seedDatabase(): Promise<void> {
         await db.accounts.add(account);
         await enqueueSync('accounts', 'create', account.id, account);
       }
+
+      await syncDefaultCategories();
 
       const cashAccountId = accountUuid(CODES.CASH);
 
@@ -126,7 +134,12 @@ export async function runMigrations(): Promise<void> {
     await db.settings.update('singleton', { migrations: [...migrations] });
   }
 
+  if (!done.has(CATEGORY_SLUG_MIGRATION)) {
+    await migrateCategorySlugIds();
+  }
+
   await syncMissingDefaultAccounts();
+  await syncDefaultCategories();
 }
 
 /** Add any new default accounts missing from older installs (idempotent). */

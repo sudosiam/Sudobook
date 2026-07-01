@@ -7,10 +7,11 @@ import { MoneyInput } from '@/components/common/MoneyInput';
 import { db } from '@/lib/db';
 import { transferSchema, type TransferFormData } from '@/lib/validators';
 import { transferBetweenBanks } from '@/lib/transactions';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export function BankTransferForm({ onDone }: { onDone: () => void }) {
-  const banks = useLiveQuery(() => db.bankAccounts.filter((b) => b.isActive).toArray());
+  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
 
   const {
     register,
@@ -30,7 +31,7 @@ export function BankTransferForm({ onDone }: { onDone: () => void }) {
       toast.success('Transfer complete');
       onDone();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(getErrorMessage(err, 'Failed'));
     }
   };
 

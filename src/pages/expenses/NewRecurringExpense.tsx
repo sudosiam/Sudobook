@@ -12,11 +12,12 @@ import { recurringExpenseSchema, type RecurringExpenseFormData } from '@/lib/val
 import { CODES } from '@/lib/coa';
 import { useSelectableExpenseAccounts } from '@/hooks/useAccountCategories';
 import { createRecurringExpense } from '@/lib/recurring';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export default function NewRecurringExpense() {
   const navigate = useNavigate();
-  const banks = useLiveQuery(() => db.bankAccounts.filter((b) => b.isActive).toArray());
+  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
   const expenseAccounts = useSelectableExpenseAccounts();
 
   const {
@@ -48,7 +49,7 @@ export default function NewRecurringExpense() {
       navigate('/expenses');
     } catch (err) {
       console.error('[NewRecurringExpense]', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to save');
+      toast.error(getErrorMessage(err, 'Failed to save'));
     }
   };
 

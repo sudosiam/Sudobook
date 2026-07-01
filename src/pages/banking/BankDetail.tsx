@@ -16,6 +16,7 @@ import { CASH_DRAWER_ID } from '@/lib/coa';
 import { updateBankAccount } from '@/lib/entities';
 import { getBankBalance, getBankTransactionsWithBalance } from '@/lib/reports';
 import { subtractMoney, toPaise } from '@/lib/money';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export default function BankDetail() {
@@ -52,7 +53,7 @@ export default function BankDetail() {
       toast.success('Account removed');
       navigate('/banking');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(getErrorMessage(err, 'Failed'));
     } finally {
       setDeleteOpen(false);
     }

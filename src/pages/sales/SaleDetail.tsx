@@ -17,6 +17,7 @@ import { db } from '@/lib/db';
 import { PAYMENT_LABELS } from '@/lib/labels';
 import { saleCogs, saleGrossMarginPct, saleGrossProfit } from '@/lib/sales';
 import { receiveSalePayment, voidSale } from '@/lib/transactions';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export default function SaleDetail() {
@@ -26,7 +27,7 @@ export default function SaleDetail() {
     () => (sale?.bankAccountId ? db.bankAccounts.get(sale.bankAccountId) : undefined),
     [sale?.bankAccountId],
   );
-  const banks = useLiveQuery(() => db.bankAccounts.filter((b) => b.isActive).toArray());
+  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
   const [payOpen, setPayOpen] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
@@ -36,15 +37,15 @@ export default function SaleDetail() {
 
   const formattedDate = format(parseISO(sale.date), 'd MMM yyyy');
 
-  const handleVoid = async () => {
-    if (voiding) return;
+  const handleVoid = async (reason?: string) => {
+    if (voiding || !reason) return;
     setVoiding(true);
     try {
-      await voidSale(sale.id, 'Voided by user');
+      await voidSale(sale.id, reason);
       toast.success('Sale voided');
       setVoidOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(getErrorMessage(err, 'Failed'));
     } finally {
       setVoiding(false);
     }
@@ -205,7 +206,7 @@ export default function SaleDetail() {
             toast.success('Payment received');
           } catch (err) {
             console.error('[SaleDetail.handlePay]', err);
-            toast.error(err instanceof Error ? err.message : 'Failed');
+            toast.error(getErrorMessage(err, 'Failed'));
             throw err;
           }
         }}
@@ -217,6 +218,8 @@ export default function SaleDetail() {
         message="This posts a reversing entry and restores stock. The record is kept for audit."
         confirmLabel="Void"
         danger
+        requireReason
+        reasonPlaceholder="Why is this sale being voided?"
         onConfirm={handleVoid}
         onCancel={() => setVoidOpen(false)}
       />

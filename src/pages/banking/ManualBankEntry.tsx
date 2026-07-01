@@ -21,10 +21,11 @@ import {
 } from '@/hooks/useAccountCategories';
 import { manualBankEntrySchema, type ManualBankEntryFormData } from '@/lib/validators';
 import { recordManualBankEntry, transferBetweenBanks } from '@/lib/transactions';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export function ManualBankEntryForm({ onDone }: { onDone: () => void }) {
-  const banks = useLiveQuery(() => db.bankAccounts.filter((b) => b.isActive).toArray());
+  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
   const expenseAccounts = useSelectableExpenseAccounts();
   const incomeAccounts = useSelectableIncomeAccounts();
 
@@ -134,7 +135,7 @@ export function ManualBankEntryForm({ onDone }: { onDone: () => void }) {
       }
       onDone();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(getErrorMessage(err, 'Failed'));
     }
   };
 

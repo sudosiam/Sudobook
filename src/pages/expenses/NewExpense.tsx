@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+
 import { useNavigate } from 'react-router-dom';
 
 import { useForm } from 'react-hook-form';
@@ -18,6 +20,8 @@ import { MoneyInput } from '@/components/common/MoneyInput';
 
 import { AccountCategorySelect } from '@/components/common/AccountCategorySelect';
 
+import { DraftBanner } from '@/components/common/DraftBanner';
+
 import { db } from '@/lib/db';
 
 import { expenseSchema, type ExpenseFormData } from '@/lib/validators';
@@ -25,18 +29,23 @@ import { expenseSchema, type ExpenseFormData } from '@/lib/validators';
 import { recordExpense } from '@/lib/transactions';
 
 import { CODES } from '@/lib/coa';
+import { getErrorMessage } from '@/lib/errors';
 
 import { useSelectableExpenseAccounts } from '@/hooks/useAccountCategories';
 
+import { useDraft, type DraftEnvelope } from '@/hooks/useDraft';
+
 import { toast } from '@/store/useToast';
 
-
+function isExpenseDraftBlank(v: ExpenseFormData): boolean {
+  return !v.description?.trim() && !v.amount;
+}
 
 export default function NewExpense() {
 
   const navigate = useNavigate();
 
-  const banks = useLiveQuery(() => db.bankAccounts.filter((b) => b.isActive).toArray());
+  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
 
   const expenseAccounts = useSelectableExpenseAccounts();
 
@@ -51,6 +60,8 @@ export default function NewExpense() {
     watch,
 
     setValue,
+
+    reset,
 
     formState: { errors, isSubmitting },
 
@@ -75,6 +86,19 @@ export default function NewExpense() {
     },
 
   });
+
+  const { loadDraft, saveDraft, clearDraft } = useDraft<ExpenseFormData>('new-expense', isExpenseDraftBlank);
+  const [draftPrompt, setDraftPrompt] = useState<DraftEnvelope<ExpenseFormData> | null>(null);
+
+  useEffect(() => {
+    setDraftPrompt(loadDraft());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const subscription = watch((values) => saveDraft(values as ExpenseFormData));
+    return () => subscription.unsubscribe();
+  }, [watch, saveDraft]);
 
 
 
@@ -108,6 +132,8 @@ export default function NewExpense() {
 
       });
 
+      clearDraft();
+
       toast.success('Expense recorded');
 
       navigate('/expenses');
@@ -116,7 +142,7 @@ export default function NewExpense() {
 
       console.error('[NewExpense]', err);
 
-      toast.error(err instanceof Error ? err.message : 'Failed to record expense');
+      toast.error(getErrorMessage(err, 'Failed to record expense'));
 
     }
 
@@ -131,6 +157,22 @@ export default function NewExpense() {
       <TopBar title="New Expense" />
 
       <PageContainer>
+
+        {draftPrompt && (
+          <div className="mb-3">
+            <DraftBanner
+              savedAt={draftPrompt.savedAt}
+              onRestore={() => {
+                reset(draftPrompt.values);
+                setDraftPrompt(null);
+              }}
+              onDiscard={() => {
+                clearDraft();
+                setDraftPrompt(null);
+              }}
+            />
+          </div>
+        )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="page-stack">
 

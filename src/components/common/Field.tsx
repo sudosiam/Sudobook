@@ -76,6 +76,20 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
 );
 Input.displayName = 'Input';
 
+export const QtyInput = forwardRef<HTMLInputElement, Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>>(
+  ({ className, ...props }, ref) => (
+    <input
+      ref={ref}
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      className={cn(base, className)}
+      {...props}
+    />
+  ),
+);
+QtyInput.displayName = 'QtyInput';
+
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
   ({ className, ...props }, ref) => (
     <textarea ref={ref} className={cn(base, 'min-h-[80px] resize-y', className)} {...props} />
@@ -131,7 +145,7 @@ export function Button({ variant = 'primary', className, children, ...props }: B
   return (
     <button
       className={cn(
-        'flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100',
+        'flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition duration-150 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100',
         variants[variant],
         className,
       )}

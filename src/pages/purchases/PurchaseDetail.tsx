@@ -16,6 +16,7 @@ import { EntityActions } from '@/components/common/EntityActions';
 import { db } from '@/lib/db';
 import { PAYMENT_LABELS } from '@/lib/labels';
 import { payPurchase, voidPurchase } from '@/lib/transactions';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export default function PurchaseDetail() {
@@ -25,7 +26,7 @@ export default function PurchaseDetail() {
     () => (purchase?.bankAccountId ? db.bankAccounts.get(purchase.bankAccountId) : undefined),
     [purchase?.bankAccountId],
   );
-  const banks = useLiveQuery(() => db.bankAccounts.filter((b) => b.isActive).toArray());
+  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
   const [payOpen, setPayOpen] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
@@ -35,15 +36,15 @@ export default function PurchaseDetail() {
 
   const formattedDate = format(parseISO(purchase.date), 'd MMM yyyy');
 
-  const handleVoid = async () => {
-    if (voiding) return;
+  const handleVoid = async (reason?: string) => {
+    if (voiding || !reason) return;
     setVoiding(true);
     try {
-      await voidPurchase(purchase.id, 'Voided by user');
+      await voidPurchase(purchase.id, reason);
       toast.success('Purchase voided');
       setVoidOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(getErrorMessage(err, 'Failed'));
     } finally {
       setVoiding(false);
     }
@@ -169,6 +170,8 @@ export default function PurchaseDetail() {
         message="Stock will be reversed and the journal entry voided. This cannot be undone."
         confirmLabel="Void"
         danger
+        requireReason
+        reasonPlaceholder="Why is this purchase being voided?"
         onConfirm={handleVoid}
         onCancel={() => setVoidOpen(false)}
       />
@@ -191,7 +194,7 @@ export default function PurchaseDetail() {
             toast.success('Payment made');
           } catch (err) {
             console.error('[PurchaseDetail.handlePay]', err);
-            toast.error(err instanceof Error ? err.message : 'Failed');
+            toast.error(getErrorMessage(err, 'Failed'));
             throw err;
           }
         }}

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -7,20 +7,27 @@ import { Plus, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { TopBar } from '@/components/layout/TopBar';
 import { PageContainer } from '@/components/layout/PageContainer';
-import { Button, Field, FormDateInput, Input, Select, Textarea } from '@/components/common/Field';
+import { Button, Field, FormDateInput, QtyInput, Select, Textarea } from '@/components/common/Field';
 import { MoneyInput } from '@/components/common/MoneyInput';
 import { MoneyDisplay } from '@/components/common/MoneyDisplay';
+import { DraftBanner } from '@/components/common/DraftBanner';
 import { db } from '@/lib/db';
 import { purchaseSchema, type PurchaseFormData } from '@/lib/validators';
 import { recordPurchase } from '@/lib/transactions';
 import { addMoney, multiplyMoney } from '@/lib/money';
+import { getErrorMessage } from '@/lib/errors';
+import { useDraft, type DraftEnvelope } from '@/hooks/useDraft';
 import { toast } from '@/store/useToast';
+
+function isPurchaseDraftBlank(v: PurchaseFormData): boolean {
+  return !v.vendorId && (!v.items || v.items.length === 0) && !v.notes?.trim();
+}
 
 export default function NewPurchase() {
   const navigate = useNavigate();
-  const products = useLiveQuery(() => db.products.filter((p) => p.isActive).toArray());
-  const vendors = useLiveQuery(() => db.vendors.filter((v) => v.isActive).toArray());
-  const banks = useLiveQuery(() => db.bankAccounts.filter((b) => b.isActive).toArray());
+  const products = useLiveQuery(() => db.products.where('isActive').equals(1).toArray());
+  const vendors = useLiveQuery(() => db.vendors.where('isActive').equals(1).toArray());
+  const banks = useLiveQuery(() => db.bankAccounts.where('isActive').equals(1).toArray());
   const productList = products ?? [];
 
   const {
@@ -29,6 +36,7 @@ export default function NewPurchase() {
     handleSubmit,
     watch,
     setValue,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm<PurchaseFormData>({
     resolver: zodResolver(purchaseSchema),
@@ -41,6 +49,19 @@ export default function NewPurchase() {
       paidAmount: 0,
     },
   });
+
+  const { loadDraft, saveDraft, clearDraft } = useDraft<PurchaseFormData>('new-purchase', isPurchaseDraftBlank);
+  const [draftPrompt, setDraftPrompt] = useState<DraftEnvelope<PurchaseFormData> | null>(null);
+
+  useEffect(() => {
+    setDraftPrompt(loadDraft());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const subscription = watch((values) => saveDraft(values as PurchaseFormData));
+    return () => subscription.unsubscribe();
+  }, [watch, saveDraft]);
 
   const { fields, append, remove } = useFieldArray({ control, name: 'items' });
   const items = watch('items');
@@ -77,11 +98,12 @@ export default function NewPurchase() {
         paidAmount,
         notes: data.notes,
       });
+      clearDraft();
       toast.success('Purchase recorded');
       navigate(`/purchases/${id}`);
     } catch (err) {
       console.error('[NewPurchase]', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to record purchase');
+      toast.error(getErrorMessage(err, 'Failed to record purchase'));
     }
   };
 
@@ -91,6 +113,21 @@ export default function NewPurchase() {
     <>
       <TopBar title="New Purchase" />
       <PageContainer>
+        {draftPrompt && (
+          <div className="mb-3">
+            <DraftBanner
+              savedAt={draftPrompt.savedAt}
+              onRestore={() => {
+                reset(draftPrompt.values);
+                setDraftPrompt(null);
+              }}
+              onDiscard={() => {
+                clearDraft();
+                setDraftPrompt(null);
+              }}
+            />
+          </div>
+        )}
         <form onSubmit={handleSubmit(onSubmit)} className="page-stack">
           <Field label="Date" error={errors.date?.message}>
             <FormDateInput name="date" control={control} />
@@ -158,12 +195,10 @@ export default function NewPurchase() {
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <Field label="Qty">
-                      <Input
-                        type="number"
-                        min={1}
+                      <QtyInput
                         value={items?.[i]?.qty ?? 1}
                         onChange={(e) => {
-                          const qty = Math.max(1, Number(e.target.value) || 1);
+                          const qty = Math.max(1, Number(e.target.value.replace(/\D/g, '')) || 1);
                           setValue(`items.${i}.qty`, qty);
                           setValue(`items.${i}.total`, multiplyMoney(items?.[i]?.unitCost || 0, qty));
                         }}

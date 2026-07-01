@@ -52,4 +52,25 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return undefined;
+          const has = (pkg: string) =>
+            id.includes(`node_modules/${pkg}/`) || id.includes(`node_modules\\${pkg}\\`);
+
+          if (has('recharts')) return 'vendor-charts';
+          if (has('motion')) return 'vendor-motion';
+          if (has('dexie') || has('dexie-react-hooks')) return 'vendor-db';
+          if (has('@supabase')) return 'vendor-supabase';
+          if (has('react-hook-form') || has('@hookform') || has('zod')) return 'vendor-forms';
+          if (has('react-router') || has('react-router-dom')) return 'vendor-router';
+          if (has('react') || has('react-dom') || has('scheduler')) return 'vendor-react';
+
+          return 'vendor-misc';
+        },
+      },
+    },
+  },
 });

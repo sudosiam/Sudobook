@@ -38,7 +38,7 @@ export async function getProfitLoss(start: string, end: string): Promise<ProfitL
       income.push({ code, name: nameOf(code), amount: bal.balance });
     } else if (code === CODES.COGS) {
       cogs += bal.balance;
-    } else if (code > 500 && code < 600) {
+    } else if (code >= 502 && code < 600) {
       expenses.push({ code, name: nameOf(code), amount: bal.balance });
     }
   }
@@ -361,7 +361,7 @@ export async function getMonthlySeries(months = 6): Promise<MonthPoint[]> {
       for (const l of e.lines) {
         if (l.accountCode >= 400 && l.accountCode < 500) revenue += l.credit - l.debit;
         else if (l.accountCode === CODES.COGS) cogs += l.debit - l.credit;
-        else if (l.accountCode > 500 && l.accountCode < 600) expenses += l.debit - l.credit;
+        else if (l.accountCode >= 502 && l.accountCode < 600) expenses += l.debit - l.credit;
       }
     }
     points.push({
@@ -379,17 +379,14 @@ export async function getMonthlySeries(months = 6): Promise<MonthPoint[]> {
 // ─── PARTY BALANCES ───────────────────────────────────────────
 
 export async function getCustomerBalance(customerId: string): Promise<number> {
-  const customer = await db.customers.get(customerId);
+  // Opening balance is already in journal entries — do NOT add it again.
   const sales = await db.sales.where('customerId').equals(customerId).toArray();
-  const due = addMoney(...sales.filter((s) => s.status !== 'void').map((s) => s.dueAmount));
-  return (customer?.openingBalance ?? 0) + due;
+  return addMoney(...sales.filter((s) => s.status !== 'void').map((s) => s.dueAmount));
 }
 
 export async function getVendorBalance(vendorId: string): Promise<number> {
-  const vendor = await db.vendors.get(vendorId);
   const purchases = await db.purchases.where('vendorId').equals(vendorId).toArray();
-  const due = addMoney(...purchases.filter((p) => p.status !== 'void').map((p) => p.dueAmount));
-  return (vendor?.openingBalance ?? 0) + due;
+  return addMoney(...purchases.filter((p) => p.status !== 'void').map((p) => p.dueAmount));
 }
 
 export async function getBankBalance(bankAccountId: string): Promise<number> {
@@ -494,12 +491,11 @@ function buildAgingReport(
 /** Receivables aging by customer — buckets based on sale date vs as-of date. */
 export async function getCustomerAging(asOf?: string): Promise<AgingReport> {
   const ref = asOf ? new Date(`${asOf}T00:00:00`) : new Date();
-  const customers = await db.customers.filter((c) => c.isActive).toArray();
+  const customers = await db.customers.where('isActive').equals(1).toArray();
   const rows: AgingRow[] = [];
 
   for (const c of customers) {
     const buckets = emptyBuckets();
-    if (c.openingBalance > 0) buckets['90+'] += c.openingBalance;
 
     const sales = await db.sales.where('customerId').equals(c.id).toArray();
     for (const s of sales) {
@@ -517,12 +513,11 @@ export async function getCustomerAging(asOf?: string): Promise<AgingReport> {
 /** Payables aging by vendor — buckets based on purchase date vs as-of date. */
 export async function getVendorAging(asOf?: string): Promise<AgingReport> {
   const ref = asOf ? new Date(`${asOf}T00:00:00`) : new Date();
-  const vendors = await db.vendors.filter((v) => v.isActive).toArray();
+  const vendors = await db.vendors.where('isActive').equals(1).toArray();
   const rows: AgingRow[] = [];
 
   for (const v of vendors) {
     const buckets = emptyBuckets();
-    if (v.openingBalance > 0) buckets['90+'] += v.openingBalance;
 
     const purchases = await db.purchases.where('vendorId').equals(v.id).toArray();
     for (const p of purchases) {
@@ -711,7 +706,11 @@ export interface InventoryValuationReport {
 }
 
 export async function getInventoryValuation(): Promise<InventoryValuationReport> {
-  const products = await db.products.filter((p) => p.isActive).toArray();
+  const [products, categories] = await Promise.all([
+    db.products.where('isActive').equals(1).toArray(),
+    db.productCategories.toArray(),
+  ]);
+  const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
   const rows: InventoryValuationRow[] = products.map((p) => {
     const costValue = multiplyMoney(p.costPrice, p.stockQty);
     const retailValue = multiplyMoney(p.sellingPrice, p.stockQty);
@@ -719,7 +718,7 @@ export async function getInventoryValuation(): Promise<InventoryValuationReport>
       productId: p.id,
       sku: p.sku,
       name: p.name,
-      category: p.category,
+      category: categoryNames.get(p.category) ?? p.category,
       stockQty: p.stockQty,
       costPrice: p.costPrice,
       sellingPrice: p.sellingPrice,

@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Download, Upload, Wrench } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Download, Trash2, Upload, Wrench } from 'lucide-react';
 import { TopBar } from '@/components/layout/TopBar';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -11,11 +11,13 @@ import { useSettings } from '@/hooks/useSettings';
 import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/lib/db';
 import { downloadBackup, exportBackup, restoreBackup, type BackupFile } from '@/lib/backup';
+import { factoryReset } from '@/lib/factoryReset';
 import {
   previewVoidReversalCleanup,
   repairVoidDoubleReversals,
 } from '@/lib/migrations/voidReversalCleanup';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export default function Settings() {
@@ -29,6 +31,11 @@ export default function Settings() {
   const [authBusy, setAuthBusy] = useState(false);
   const [repairBusy, setRepairBusy] = useState(false);
   const [orphanCount, setOrphanCount] = useState<number | null>(null);
+  const [factoryOpen, setFactoryOpen] = useState(false);
+
+  useEffect(() => {
+    if (settings?.businessName) setBusinessName(settings.businessName);
+  }, [settings?.businessName]);
 
   if (!settings) return <LoadingSpinner />;
 
@@ -43,7 +50,7 @@ export default function Settings() {
       if (mode === 'in') toast.success('Signed in — sync enabled');
       setPassword('');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Auth failed');
+      toast.error(getErrorMessage(err, 'Auth failed'));
     } finally {
       setAuthBusy(false);
     }
@@ -56,7 +63,7 @@ export default function Settings() {
       toast.success('Saved');
     } catch (err) {
       console.error('[saveName]', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to save');
+      toast.error(getErrorMessage(err, 'Failed to save'));
     }
   };
 
@@ -65,7 +72,7 @@ export default function Settings() {
       downloadBackup(await exportBackup());
       toast.success('Backup downloaded');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Export failed');
+      toast.error(getErrorMessage(err, 'Export failed'));
     }
   };
 
@@ -85,7 +92,7 @@ export default function Settings() {
       toast.success('Backup restored');
       setPendingRestore(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Restore failed');
+      toast.error(getErrorMessage(err, 'Restore failed'));
     }
   };
 
@@ -103,7 +110,7 @@ export default function Settings() {
       }
     } catch (err) {
       console.error('[scanLedgerRepair]', err);
-      toast.error(err instanceof Error ? err.message : 'Scan failed');
+      toast.error(getErrorMessage(err, 'Scan failed'));
     } finally {
       setRepairBusy(false);
     }
@@ -123,9 +130,21 @@ export default function Settings() {
       }
     } catch (err) {
       console.error('[runLedgerRepair]', err);
-      toast.error(err instanceof Error ? err.message : 'Repair failed');
+      toast.error(getErrorMessage(err, 'Repair failed'));
     } finally {
       setRepairBusy(false);
+    }
+  };
+
+  const confirmFactoryReset = async () => {
+    try {
+      await factoryReset({ userId: activeUserId });
+      toast.success('Factory reset complete — backup downloaded. Reloading…');
+      setFactoryOpen(false);
+      window.location.href = '/';
+    } catch (err) {
+      console.error('[confirmFactoryReset]', err);
+      toast.error(getErrorMessage(err, 'Factory reset failed'));
     }
   };
 
@@ -147,7 +166,7 @@ export default function Settings() {
             <div className="space-y-3 card">
               <Field label="Business Name">
                 <Input
-                  defaultValue={settings.businessName}
+                  value={businessName}
                   onChange={(e) => setBusinessName(e.target.value)}
                 />
               </Field>
@@ -271,6 +290,25 @@ export default function Settings() {
             <SyncPanel activeUserId={activeUserId} />
           </section>
 
+          <section>
+            <h2 className="mb-2 text-xs uppercase tracking-wider text-danger">Danger Zone</h2>
+            <div className="space-y-3 rounded-xl border border-danger/30 bg-surface p-4">
+              <p className="text-sm text-muted">
+                Factory reset downloads a full JSON backup first, then permanently erases all sales,
+                purchases, expenses, inventory, ledger entries, and cloud sync data. The app returns to
+                a fresh empty state with default accounts only.
+              </p>
+              {activeUserId && (
+                <p className="text-xs text-warning">
+                  You are signed in — cloud data will also be wiped. Stay online until reset finishes.
+                </p>
+              )}
+              <Button variant="danger" className="w-full" onClick={() => setFactoryOpen(true)}>
+                <Trash2 className="h-4 w-4" /> Factory Reset
+              </Button>
+            </div>
+          </section>
+
           <p className="text-center text-xs text-disabled">Sudo Books v1.0 · Biswajit Power Hub</p>
         </div>
       </PageContainer>
@@ -283,6 +321,17 @@ export default function Settings() {
         danger
         onConfirm={confirmRestore}
         onCancel={() => setPendingRestore(null)}
+      />
+
+      <ConfirmDialog
+        open={factoryOpen}
+        title="Factory reset?"
+        message="A backup file will download automatically. Then every local and cloud record will be permanently deleted. This cannot be undone."
+        confirmLabel="Delete everything"
+        danger
+        requirePhrase="DELETE ALL"
+        onConfirm={confirmFactoryReset}
+        onCancel={() => setFactoryOpen(false)}
       />
     </>
   );

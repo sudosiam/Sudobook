@@ -7,6 +7,7 @@ import { MoneyInput } from '@/components/common/MoneyInput';
 import { createBankAccount, updateBankAccount } from '@/lib/entities';
 import { CASH_DRAWER_ID } from '@/lib/coa';
 import type { BankAccount } from '@/lib/db';
+import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 
 export function BankAccountForm({
@@ -60,7 +61,7 @@ export function BankAccountForm({
       }
     } catch (err) {
       console.error('[BankAccountForm]', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to save account');
+      toast.error(getErrorMessage(err, 'Failed to save account'));
     }
   };
 
