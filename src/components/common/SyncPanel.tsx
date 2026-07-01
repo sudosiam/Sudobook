@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
@@ -7,6 +8,7 @@ import { useSync } from '@/hooks/useSync';
 import { useOnline } from '@/hooks/useOnline';
 import { useSyncStore } from '@/store/useSyncStore';
 import { useSettings } from '@/hooks/useSettings';
+import { verifySupabaseSchema, type SupabaseSchemaStatus } from '@/lib/supabaseSchema';
 
 function fmt(iso?: string): string {
   if (!iso) return 'never';
@@ -34,6 +36,16 @@ export function SyncPanel({ activeUserId }: { activeUserId: string | null }) {
     [],
     0,
   );
+
+  const [schema, setSchema] = useState<SupabaseSchemaStatus | null>(null);
+
+  useEffect(() => {
+    if (!activeUserId) {
+      setSchema(null);
+      return;
+    }
+    void verifySupabaseSchema().then(setSchema);
+  }, [activeUserId, status]);
 
   if (!isSupabaseConfigured) {
     return (
@@ -85,7 +97,24 @@ export function SyncPanel({ activeUserId }: { activeUserId: string | null }) {
         <dd className="text-right text-foreground">{fmt(settings?.lastPullAt)}</dd>
         <dt className="text-muted">Device</dt>
         <dd className="text-right font-numeric text-foreground">{settings?.deviceId ?? '—'}</dd>
+        {schema && activeUserId && (
+          <>
+            <dt className="text-muted">Cloud tables</dt>
+            <dd
+              className={`text-right tabular-nums ${schema.missing.length > 0 ? 'text-warning' : 'text-success'}`}
+            >
+              {schema.ready}/{schema.total}
+            </dd>
+          </>
+        )}
       </dl>
+
+      {schema && schema.missing.length > 0 && (
+        <p className="text-xs text-warning">
+          Missing in Supabase: {schema.missing.join(', ')}. Run{' '}
+          <span className="font-mono">RUN_ME_PENDING.sql</span> in Supabase Dashboard → SQL Editor.
+        </p>
+      )}
 
       <Button
         variant="secondary"

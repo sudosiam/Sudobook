@@ -1,25 +1,16 @@
 import { db, now, uuid, type SyncQueueItem } from '@/lib/db';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import {
+  SYNC_TABLE_MAP,
+  getSupabaseSchemaStatus,
+  isMissingTableError,
+  verifySupabaseSchema,
+} from '@/lib/supabaseSchema';
 import { toast } from '@/store/useToast';
 
-const MAX_RETRIES = 3;
+export { getSupabaseSchemaStatus, verifySupabaseSchema };
 
-/** Postgrest "table not found" — means a Supabase migration hasn't been run
- * yet. This is a permanent condition (not a transient network blip), so we
- * warn once per table per session instead of spamming the console/retrying
- * loudly forever every 30s. */
-function isMissingTableError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const e = err as { code?: string; message?: string; status?: number; statusCode?: number };
-  const message = e.message ?? '';
-  return (
-    e.code === 'PGRST205' ||
-    e.status === 404 ||
-    e.statusCode === 404 ||
-    message.includes('Could not find the table') ||
-    /relation .* does not exist/i.test(message)
-  );
-}
+const MAX_RETRIES = 3;
 
 const warnedMissingTables = new Set<string>();
 /** Remote tables confirmed absent this session — skip pull/push to avoid 404 spam. */
@@ -32,7 +23,19 @@ function warnMissingTableOnce(table: string): void {
   console.warn(
     `[sync] Supabase table "${table}" is missing — apply supabase/migrations/006_recurring_expenses.sql and 007_product_categories.sql in your Supabase project. Local data is safe.`,
   );
-  toast.info(`Cloud sync: "${table}" table not set up yet. Run pending Supabase migrations when ready.`);
+  toast.info(
+    `Cloud sync: "${table}" missing in Supabase — open Supabase Dashboard → SQL Editor and run supabase/migrations/RUN_ME_PENDING.sql`,
+  );
+}
+
+/** Probe all mirror tables via supabase-js and refresh the skip-list. */
+async function refreshSupabaseSchema(): Promise<void> {
+  const status = await verifySupabaseSchema();
+  const missingSet = new Set(status.missing);
+  for (const { remote } of SYNC_TABLE_MAP) {
+    if (missingSet.has(remote)) warnMissingTableOnce(remote);
+    else missingRemoteTables.delete(remote);
+  }
 }
 
 /** Postgres 22P02 — record id is not a valid uuid (e.g. legacy category slug). */
@@ -157,22 +160,8 @@ export async function processSyncQueue(): Promise<void> {
   }
 }
 
-/** Dexie store name ↔ Supabase table name. */
-const SYNC_TABLES: { local: string; remote: string }[] = [
-  { local: 'accounts', remote: 'accounts' },
-  { local: 'journalEntries', remote: 'journal_entries' },
-  { local: 'customers', remote: 'customers' },
-  { local: 'vendors', remote: 'vendors' },
-  { local: 'products', remote: 'products' },
-  { local: 'productCategories', remote: 'product_categories' },
-  { local: 'sales', remote: 'sales' },
-  { local: 'purchases', remote: 'purchases' },
-  { local: 'expenses', remote: 'expenses' },
-  { local: 'recurringExpenses', remote: 'recurring_expenses' },
-  { local: 'bankAccounts', remote: 'bank_accounts' },
-  { local: 'bankTransactions', remote: 'bank_transactions' },
-  { local: 'stockMovements', remote: 'stock_movements' },
-];
+/** Dexie store name ↔ Supabase table name (canonical list in supabaseSchema.ts). */
+const SYNC_TABLES = SYNC_TABLE_MAP;
 
 interface MirrorRow {
   id: string;
@@ -298,6 +287,10 @@ export async function runSync(): Promise<void> {
   runSyncInFlight = (async () => {
     do {
       runSyncQueued = false;
+      if (supabase) {
+        const { data: auth } = await supabase.auth.getUser();
+        if (auth.user) await refreshSupabaseSchema();
+      }
       await processSyncQueue();
       await pullFromSupabase();
     } while (runSyncQueued);
