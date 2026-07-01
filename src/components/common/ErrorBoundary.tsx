@@ -42,9 +42,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <AlertTriangle className="h-6 w-6 text-danger" />
         </div>
         <h1 className="mt-4 text-base font-semibold text-foreground">Something went wrong</h1>
-        <p className="mt-1.5 max-w-xs text-sm text-muted">
-          Your data is safe on this device — nothing was lost. Reloading usually fixes this.
-        </p>
         <button
           type="button"
           onClick={this.handleReload}

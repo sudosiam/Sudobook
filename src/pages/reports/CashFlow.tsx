@@ -9,7 +9,7 @@ import { getCashFlow } from '@/lib/reports';
 import { fyDateRange } from '@/lib/sequences';
 import { useAppStore } from '@/store/useAppStore';
 import { PeriodFilter } from '@/components/common/PeriodFilter';
-import { usePeriodStore, periodRange, periodLabel } from '@/store/usePeriodStore';
+import { usePeriodStore, periodRange } from '@/store/usePeriodStore';
 
 export default function CashFlow() {
   const currentFY = useAppStore((s) => s.currentFY);
@@ -37,9 +37,6 @@ export default function CashFlow() {
           <LoadingSpinner />
         ) : (
           <>
-            <p className="no-print mb-2 text-xs text-muted">
-              {range ? periodLabel({ mode, year, month }) : `Financial Year ${currentFY}`}
-            </p>
           <div className="print-area list-shell divide-y divide-border-app">
             <Row label="Opening Cash & Bank" amount={cf.opening} />
             <Row label="Operating Activities" amount={cf.operating} colored />

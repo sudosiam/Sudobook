@@ -53,9 +53,6 @@ export default function ExpenseReport() {
         }
       />
       <PageContainer>
-        <p className="no-print mb-2 text-xs text-muted">
-          {range ? periodLabel({ mode, year, month }) : `Financial Year ${currentFY}`}
-        </p>
         {report && report.count > 0 && (
           <Button variant="secondary" className="no-print mb-3 w-full" onClick={handleExport}>
             <Download className="h-4 w-4" /> Export CSV

@@ -58,10 +58,6 @@ export default function NewFixedAsset() {
     <>
       <TopBar title="Fixed Asset" />
       <PageContainer>
-        <p className="mb-3 text-xs text-muted">
-          Records a capital purchase — debits Fixed Assets (105) and credits your cash or bank account.
-          Use this for showroom equipment, furniture, or fixtures, not resale inventory.
-        </p>
         <form onSubmit={handleSubmit(onSubmit)} className="page-stack">
           <Field label="Date" error={errors.date?.message}>
             <FormDateInput name="date" control={control} />

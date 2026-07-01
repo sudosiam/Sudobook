@@ -67,7 +67,7 @@ export default function CustomersList() {
         {!customers ? (
           <LoadingSpinner />
         ) : filtered.length === 0 ? (
-          <EmptyState icon={Users} title="No customers yet" description="Add customers to track receivables." />
+          <EmptyState icon={Users} title="No customers yet" />
         ) : (
           <>
             <div className="list-shell">
@@ -85,7 +85,6 @@ export default function CustomersList() {
                     </div>
                     <div className="ml-3 text-right">
                       <MoneyDisplay amount={balance} className="text-sm font-semibold" tone={balance > 0 ? 'income' : 'neutral'} />
-                      <p className="text-xs text-muted">{balance > 0 ? 'owes you' : 'settled'}</p>
                     </div>
                   </Link>
                 );

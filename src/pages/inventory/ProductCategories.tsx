@@ -58,10 +58,6 @@ function CategoryEditor({
           maxLength={6}
         />
       </Field>
-      <p className="text-xs text-muted">
-        New products in this category get auto-numbered SKUs like{' '}
-        <span className="font-mono text-foreground">{(skuPrefix || 'GEN').toUpperCase()}-0001</span>.
-      </p>
       <Button type="button" disabled={saving || !name.trim()} onClick={() => void save()} className="w-full">
         {category ? 'Save Changes' : 'Add Category'}
       </Button>
@@ -106,7 +102,7 @@ export default function ProductCategories() {
         {!categories ? (
           <LoadingSpinner />
         ) : sorted.length === 0 ? (
-          <EmptyState icon={Tag} title="No categories yet" description="Add a category to start organizing inventory." />
+          <EmptyState icon={Tag} title="No categories yet" />
         ) : (
           <div className="space-y-2">
             {sorted.map((c) => {
@@ -152,7 +148,7 @@ export default function ProductCategories() {
       <ConfirmDialog
         open={!!deactivating}
         title="Hide this category?"
-        message={`It won't show up when adding new products. Existing products keep their category — you can unhide it anytime by editing.`}
+        message={`Hide ${deactivating?.name ?? 'this category'}?`}
         confirmLabel="Hide"
         danger
         onConfirm={handleDeactivate}

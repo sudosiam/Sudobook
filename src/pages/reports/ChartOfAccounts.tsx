@@ -67,12 +67,6 @@ export default function ChartOfAccounts() {
 
       <PageContainer>
 
-        <p className="no-print mb-2 text-xs text-muted">
-          {range
-            ? `Balances as on ${new Date(range.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
-            : 'All time balances'}
-        </p>
-
         <div className="page-stack">
 
           {GROUPS.map((g) => {

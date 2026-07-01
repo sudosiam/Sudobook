@@ -97,18 +97,13 @@ export default function BankDetail() {
           </Field>
           {difference !== null && (
             <div className="mt-3 flex items-center justify-between rounded-lg border border-border-app bg-app px-3 py-2">
-              <span className="text-xs text-muted">Difference (statement âˆ’ book)</span>
+              <span className="text-xs text-muted">Difference</span>
               <MoneyDisplay
                 amount={difference}
                 tone={difference === 0 ? 'neutral' : 'expense'}
                 className="text-sm font-semibold"
               />
             </div>
-          )}
-          {difference !== null && difference !== 0 && (
-            <p className="mt-2 text-xs text-muted">
-              A non-zero difference may mean missing entries, pending cheques, or bank charges not yet recorded.
-            </p>
           )}
         </div>
 

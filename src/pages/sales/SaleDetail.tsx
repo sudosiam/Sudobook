@@ -121,10 +121,7 @@ export default function SaleDetail() {
 
           {sale.status !== 'void' && sale.dueAmount > 0 && (
             <div className="card-accent flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-warning">Amount Due</p>
-                <p className="mt-0.5 text-xs text-muted">Outstanding on this sale</p>
-              </div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-warning">Amount Due</p>
               <MoneyDisplay amount={sale.dueAmount} tone={docDueTone(sale.status, sale.paymentMethod)} className="text-lg font-semibold" />
             </div>
           )}

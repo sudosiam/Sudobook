@@ -93,7 +93,7 @@ export default function ProductsList() {
         {!products ? (
           <LoadingSpinner />
         ) : filtered.length === 0 ? (
-          <EmptyState icon={Package} title="No products yet" description="Add your EV products to track stock." />
+          <EmptyState icon={Package} title="No products yet" />
         ) : (
           <>
             <div className="space-y-2">

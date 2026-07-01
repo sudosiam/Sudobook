@@ -11,7 +11,7 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Button, Field, Input } from '@/components/common/Field';
 import { EntityActions } from '@/components/common/EntityActions';
 import { FAB } from '@/components/common/FAB';
-import { db, type Account } from '@/lib/db';
+import { type Account } from '@/lib/db';
 import {
   createExpenseCategory,
   isDefaultExpenseAccount,
@@ -56,13 +56,6 @@ function CategoryEditor({ category, onDone }: { category?: Account; onDone: () =
           disabled={readOnly}
         />
       </Field>
-      {readOnly ? (
-        <p className="text-xs text-muted">Default categories can be used but not renamed or removed.</p>
-      ) : (
-        <p className="text-xs text-muted">
-          Appears in expense forms and reports. Assigned the next free account code (508+).
-        </p>
-      )}
       {!readOnly && (
         <Button type="button" disabled={saving || !name.trim()} onClick={() => void save()} className="w-full">
           {category ? 'Save Changes' : 'Add Category'}
@@ -74,15 +67,6 @@ function CategoryEditor({ category, onDone }: { category?: Account; onDone: () =
 
 export default function ExpenseCategories() {
   const categories = useLiveQuery(() => listExpenseCategoryAccounts(), []);
-  const usageCounts = useLiveQuery(async () => {
-    const expenses = await db.expenses.toArray();
-    const counts = new Map<number, number>();
-    for (const e of expenses) {
-      if (e.voidedAt) continue;
-      counts.set(e.accountCode, (counts.get(e.accountCode) ?? 0) + 1);
-    }
-    return counts;
-  }, []);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
@@ -108,17 +92,11 @@ export default function ExpenseCategories() {
     <>
       <TopBar title="Expense Categories" />
       <PageContainer>
-        <p className="mb-3 text-xs text-muted">
-          Default categories (Rent, Salaries, etc.) are built in. Add your own for anything else — they sync to the
-          chart of accounts automatically.
-        </p>
-
         {categories.length === 0 ? (
-          <EmptyState icon={Tag} title="No categories" description="Add your first expense category." />
+          <EmptyState icon={Tag} title="No categories" />
         ) : (
           <div className="list-shell">
             {categories.map((c) => {
-              const count = usageCounts?.get(c.code) ?? 0;
               const isDefault = isDefaultExpenseAccount(c.code);
               return (
                 <div
@@ -127,11 +105,7 @@ export default function ExpenseCategories() {
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
-                    <p className="text-xs text-muted">
-                      Acct {c.code}
-                      {isDefault ? ' · default' : ' · custom'}
-                      {count > 0 ? ` · ${count} expense${count === 1 ? '' : 's'}` : ''}
-                    </p>
+                    <p className="text-xs text-muted font-mono tabular-nums">{c.code}</p>
                   </div>
                   {!isDefault && (
                     <EntityActions
@@ -167,11 +141,7 @@ export default function ExpenseCategories() {
       <ConfirmDialog
         open={removeId !== null}
         title="Remove this category?"
-        message={
-          removeTarget && (usageCounts?.get(removeTarget.code) ?? 0) > 0
-            ? `${removeTarget.name} has existing expenses — it will be hidden from new entries but past records stay intact.`
-            : `${removeTarget?.name ?? 'This category'} will be hidden from expense forms.`
-        }
+        message={`Remove ${removeTarget?.name ?? 'this category'}?`}
         confirmLabel="Remove"
         danger
         onConfirm={confirmRemove}

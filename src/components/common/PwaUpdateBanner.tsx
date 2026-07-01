@@ -40,7 +40,6 @@ export function PwaUpdateBanner() {
     <div className="pointer-events-auto fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-[190] mx-3 flex items-center justify-between gap-3 rounded-xl border border-brand/40 bg-brand px-4 py-3 shadow-lg shadow-black/40 md:bottom-4 md:mx-auto md:max-w-md">
       <div className="min-w-0">
         <p className="text-sm font-semibold text-white">Update available</p>
-        <p className="text-xs text-white/80">Reload for the latest Sudo Books version</p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <button

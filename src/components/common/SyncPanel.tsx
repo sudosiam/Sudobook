@@ -62,7 +62,7 @@ export function SyncPanel({ activeUserId }: { activeUserId: string | null }) {
   const dismissOne = async (id: string) => {
     try {
       await dismissFailedSyncItem(id);
-      toast.info('Removed from sync queue — record stays on this device only');
+      toast.info('Removed from sync queue');
     } catch (err) {
       console.error('[dismissFailedSyncItem]', err);
       toast.error('Could not remove item');
@@ -70,11 +70,7 @@ export function SyncPanel({ activeUserId }: { activeUserId: string | null }) {
   };
 
   if (!isSupabaseConfigured) {
-    return (
-      <div className="card text-sm text-muted">
-        Running in local-only mode. Add Supabase env vars to enable cloud sync &amp; backup.
-      </div>
-    );
+    return <div className="card text-sm text-muted">Local only</div>;
   }
 
   const dotClass = !activeUserId
@@ -90,7 +86,7 @@ export function SyncPanel({ activeUserId }: { activeUserId: string | null }) {
   const label = !activeUserId
     ? 'Sign in to activate'
     : !online
-      ? 'Offline — will sync when back online'
+      ? 'Offline'
       : status === 'syncing'
         ? 'Syncing…'
         : status === 'error'
@@ -133,50 +129,34 @@ export function SyncPanel({ activeUserId }: { activeUserId: string | null }) {
 
       {schema && schema.missing.length > 0 && (
         <p className="text-xs text-warning">
-          Missing in Supabase: {schema.missing.join(', ')}. Run{' '}
-          <span className="font-mono">RUN_ME_PENDING.sql</span> in Supabase Dashboard → SQL Editor.
-        </p>
-      )}
-
-      {!activeUserId && ((pending ?? 0) > 0 || (failed ?? 0) > 0) && (
-        <p className="text-xs text-danger">
-          {(pending ?? 0) + (failed ?? 0)} change(s) waiting — sign in below to upload to cloud.
+          Missing: {schema.missing.join(', ')}
         </p>
       )}
 
       {(failed ?? 0) > 0 && activeUserId && (
-        <div className="space-y-2">
-          <p className="text-xs text-danger">
-            Failed uploads — data is safe on this device. Retry or dismiss items that cannot sync.
-          </p>
-          <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border-app">
-            {(failedItems ?? []).map((item) => (
-              <li
-                key={item.id}
-                className="flex min-h-[44px] items-start justify-between gap-2 border-b border-border-app px-3 py-2 last:border-0"
+        <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border-app">
+          {(failedItems ?? []).map((item) => (
+            <li
+              key={item.id}
+              className="flex min-h-[44px] items-start justify-between gap-2 border-b border-border-app px-3 py-2 last:border-0"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-foreground">{failedLabel(item)}</p>
+                <p className="line-clamp-2 text-[11px] text-muted">
+                  {item.lastError ?? (item.permanentFailure ? 'Permanent error' : 'Upload failed')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void dismissOne(item.id)}
+                className="flex min-h-[32px] min-w-[32px] shrink-0 items-center justify-center rounded-lg text-muted active:bg-surface-hover"
+                aria-label="Dismiss failed sync item"
               >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-foreground">{failedLabel(item)}</p>
-                  <p className="line-clamp-2 text-[11px] text-muted">
-                    {item.lastError ?? (item.permanentFailure ? 'Permanent error' : 'Upload failed')}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void dismissOne(item.id)}
-                  className="flex min-h-[32px] min-w-[32px] shrink-0 items-center justify-center rounded-lg text-muted active:bg-surface-hover"
-                  title="Stop retrying — keep local only"
-                  aria-label="Dismiss failed sync item"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </li>
-            ))}
-          </ul>
-          {(failed ?? 0) > (failedItems?.length ?? 0) && (
-            <p className="text-[11px] text-muted">Showing first {failedItems?.length} of {failed}.</p>
-          )}
-        </div>
+                <X className="h-4 w-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
 
       <Button

@@ -20,7 +20,6 @@ export function EntityNotFound({
         <EmptyState
           icon={FileQuestion}
           title={`${title} not found`}
-          description="This record may have been removed or the link is invalid."
           action={
             <Link to={backTo} className="text-sm font-medium text-brand-light">
               {backLabel}

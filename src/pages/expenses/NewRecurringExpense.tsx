@@ -57,9 +57,6 @@ export default function NewRecurringExpense() {
     <>
       <TopBar title="Recurring Expense" />
       <PageContainer>
-        <p className="mb-3 text-xs text-muted">
-          Rent, electricity, salaries — post each month from the Expenses screen.
-        </p>
         <form onSubmit={handleSubmit(onSubmit)} className="page-stack">
           <Field label="Template Name" error={errors.name?.message}>
             <Input {...register('name')} placeholder="e.g. Shop Rent" />

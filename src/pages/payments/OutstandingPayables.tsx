@@ -25,11 +25,7 @@ export default function OutstandingPayables() {
         {!purchases ? (
           <LoadingSpinner />
         ) : purchases.length === 0 ? (
-          <EmptyState
-            icon={Banknote}
-            title="Nothing to pay"
-            description="All purchases are fully paid. Credit purchases with balance due appear here."
-          />
+          <EmptyState icon={Banknote} title="Nothing to pay" />
         ) : (
           <div className="page-stack">
             <div className="card">

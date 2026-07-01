@@ -29,15 +29,10 @@ export default function CustomerAging() {
     <>
       <TopBar title="Customer Aging" right={<PrintIconButton />} />
       <PageContainer>
-        <p className="mb-3 text-xs text-muted">As on {asOf} · Outstanding receivables by age</p>
         {!report ? (
           <LoadingSpinner />
         ) : report.rows.length === 0 ? (
-          <EmptyState
-            icon={Users}
-            title="No outstanding receivables"
-            description="Credit sales with balance due will appear here."
-          />
+          <EmptyState icon={Users} title="No outstanding receivables" />
         ) : (
           <div className="print-area page-stack">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

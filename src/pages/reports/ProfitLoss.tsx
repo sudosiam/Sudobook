@@ -9,7 +9,7 @@ import { getProfitLoss } from '@/lib/reports';
 import { fyDateRange } from '@/lib/sequences';
 import { useAppStore } from '@/store/useAppStore';
 import { PeriodFilter } from '@/components/common/PeriodFilter';
-import { usePeriodStore, periodRange, periodLabel } from '@/store/usePeriodStore';
+import { usePeriodStore, periodRange } from '@/store/usePeriodStore';
 
 export default function ProfitLoss() {
   const currentFY = useAppStore((s) => s.currentFY);
@@ -37,9 +37,6 @@ export default function ProfitLoss() {
           <LoadingSpinner />
         ) : (
         <div className="print-area page-stack">
-          <p className="no-print text-xs text-muted">
-            {range ? periodLabel({ mode, year, month }) : `Financial Year ${currentFY}`}
-          </p>
           <Section title="Income">
             {pl.income.map((l) => (
               <Row key={l.code} label={l.name} amount={l.amount} />

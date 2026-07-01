@@ -154,11 +154,6 @@ export default function GeneralLedger() {
           <EmptyState
             icon={BookOpen}
             title={(entries?.length ?? 0) === 0 ? 'No journal entries' : 'No matching entries'}
-            description={
-              (entries?.length ?? 0) === 0
-                ? 'Entries post automatically with transactions.'
-                : 'Try adjusting search.'
-            }
           />
         ) : (
           <div className="list-shell">

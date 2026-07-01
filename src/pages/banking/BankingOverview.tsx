@@ -55,7 +55,7 @@ export default function BankingOverview() {
         {!rows ? (
           <LoadingSpinner />
         ) : rows.length === 0 ? (
-          <EmptyState icon={Wallet} title="No accounts yet" description="Add a bank or cash account." />
+          <EmptyState icon={Wallet} title="No accounts yet" />
         ) : (
           <div className="space-y-2">
             {rows.map((b) => (

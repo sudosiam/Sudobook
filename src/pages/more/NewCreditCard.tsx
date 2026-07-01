@@ -74,11 +74,6 @@ export default function NewCreditCard() {
     <>
       <TopBar title="Credit Card" />
       <PageContainer>
-        <p className="mb-3 text-xs text-muted">
-          {kind === 'payment'
-            ? 'Pay your card bill — debits Credit Cards (203) and credits cash/bank.'
-            : 'Expense charged to card — debits an expense account and credits Credit Cards (203).'}
-        </p>
         <form onSubmit={handleSubmit(onSubmit)} className="page-stack">
           <Field label="Type" error={errors.kind?.message}>
             <Select {...register('kind')}>

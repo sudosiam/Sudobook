@@ -119,11 +119,6 @@ export default function SalesList() {
           <EmptyState
             icon={ShoppingBag}
             title={(sales?.length ?? 0) === 0 ? 'No sales yet' : 'No matching sales'}
-            description={
-              (sales?.length ?? 0) === 0
-                ? 'Record your first sale to get started.'
-                : 'Try adjusting filters or search.'
-            }
             action={
               (sales?.length ?? 0) === 0 ? (
                 <Link to="/sales/new">

@@ -48,7 +48,7 @@ export default function Dashboard() {
           <Reveal className="page-stack pb-1">
             {mode === 'all' && (
               <RevealItem>
-                <p className="text-xs text-muted">Financial Year {currentFY}</p>
+                <p className="text-xs text-muted">{currentFY}</p>
               </RevealItem>
             )}
 
@@ -59,12 +59,9 @@ export default function Dashboard() {
                   className="flex min-h-[48px] items-center gap-3 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 active:bg-warning/15"
                 >
                   <AlertTriangle className="h-5 w-5 shrink-0 text-warning" aria-hidden />
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {lowStockCount} product{lowStockCount === 1 ? '' : 's'} low on stock
-                    </p>
-                    <p className="text-xs text-muted">Tap to review inventory</p>
-                  </div>
+                  <p className="text-sm font-medium text-foreground">
+                    {lowStockCount} product{lowStockCount === 1 ? '' : 's'} low on stock
+                  </p>
                 </Link>
               </RevealItem>
             )}
@@ -82,7 +79,7 @@ export default function Dashboard() {
               <StatCard label="Receivables" amount={metrics.receivable} tone="partial" animate to="/payments" />
               <StatCard label="Payable" amount={metrics.payable} animate to="/payments/payable" />
               <StatCard label="Inventory" amount={metrics.inventory} animate to="/inventory" />
-              <StatCard label="Total Liquid" amount={metrics.totalLiquid} hint="Cash + bank" animate to="/banking" />
+              <StatCard label="Total Liquid" amount={metrics.totalLiquid} animate to="/banking" />
             </RevealItem>
 
             <RevealItem className="card">

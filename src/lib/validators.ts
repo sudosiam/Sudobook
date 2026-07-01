@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { format } from 'date-fns';
 import {
   BANK_ENTRY_REASON_IDS,
   getBankEntryReason,
@@ -18,7 +19,7 @@ const expenseCode = z
 const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
-  .refine((d) => d <= new Date().toISOString().slice(0, 10), 'Date cannot be in the future');
+  .refine((d) => d <= format(new Date(), 'yyyy-MM-dd'), 'Date cannot be in the future');
 
 export const saleItemSchema = z
   .object({

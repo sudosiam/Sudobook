@@ -62,11 +62,6 @@ export default function NewOwnerCapital() {
     <>
       <TopBar title="Owner's Capital" />
       <PageContainer>
-        <p className="mb-3 text-xs text-muted">
-          {kind === 'contribution'
-            ? 'Owner puts money in — debits cash/bank and credits Owner\'s Capital (301).'
-            : 'Owner takes money out — debits Owner\'s Capital (301) and credits cash/bank.'}
-        </p>
         <form onSubmit={handleSubmit(onSubmit)} className="page-stack">
           <Field label="Type" error={errors.kind?.message}>
             <Select {...register('kind')}>

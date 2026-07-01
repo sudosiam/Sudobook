@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Plus, Sparkles } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { productSchema, type ProductFormData } from '@/lib/validators';
 import { Button, Field, Input, QtyInput, Select } from '@/components/common/Field';
 import { MoneyInput } from '@/components/common/MoneyInput';
@@ -104,12 +104,6 @@ export function ProductForm({
     }
   };
 
-  const costPrice = watch('costPrice');
-  const sellingPrice = watch('sellingPrice');
-  const minStock = watch('minStock');
-  const marginPct =
-    sellingPrice > 0 ? Math.round(((sellingPrice - costPrice) / sellingPrice) * 100) : null;
-
   const onSubmit = async (data: ProductFormData) => {
     try {
       if (product) {
@@ -147,17 +141,6 @@ export function ProductForm({
           <Input {...register('unit')} placeholder="pcs" />
         </Field>
       </div>
-      {!isEdit && (
-        <p className="-mt-1 flex items-center gap-1 text-xs text-muted">
-          {skuAuto ? (
-            <>
-              <Sparkles className="h-3 w-3 text-brand-light" /> Auto-generated from category — edit to set your own
-            </>
-          ) : (
-            'Custom SKU'
-          )}
-        </p>
-      )}
 
       <Field label="Name" error={errors.name?.message}>
         <Input {...register('name')} placeholder="Product name" />
@@ -239,19 +222,6 @@ export function ProductForm({
         </Field>
       )}
 
-      {marginPct !== null && sellingPrice > 0 && (
-        <p className="text-xs text-muted">
-          Margin:{' '}
-          <span className={marginPct >= 0 ? 'text-success' : 'text-danger'}>{marginPct}%</span>
-          {costPrice > 0 && sellingPrice > costPrice && (
-            <span className="text-muted">
-              {' '}
-              · markup {Math.round(((sellingPrice - costPrice) / costPrice) * 100)}%
-            </span>
-          )}
-        </p>
-      )}
-
       {!isEdit ? (
         <div className="grid grid-cols-2 gap-2">
           <Field label="Opening Stock" error={errors.stockQty?.message}>
@@ -264,23 +234,7 @@ export function ProductForm({
       ) : (
         <Field label="Min Stock Alert" error={errors.minStock?.message}>
           <QtyInput {...register('minStock', { valueAsNumber: true })} />
-          {isEdit && product && (
-            <p
-              className={`mt-1 text-xs ${
-                product.stockQty <= minStock ? 'text-warning' : 'text-success'
-              }`}
-            >
-              Current stock: {product.stockQty} {product.unit}
-              {product.stockQty <= minStock ? ' — below minimum' : ' — OK'}
-            </p>
-          )}
         </Field>
-      )}
-
-      {isEdit && (
-        <p className="text-xs text-muted">
-          Cost price updates via purchases only. Use Adjust Stock to change quantity.
-        </p>
       )}
 
       <Button type="submit" disabled={isSubmitting} className="w-full">

@@ -25,11 +25,7 @@ export default function OutstandingPayments() {
         {!sales ? (
           <LoadingSpinner />
         ) : sales.length === 0 ? (
-          <EmptyState
-            icon={HandCoins}
-            title="Nothing to collect"
-            description="All sales are fully paid. Credit sales with balance due appear here."
-          />
+          <EmptyState icon={HandCoins} title="Nothing to collect" />
         ) : (
           <div className="page-stack">
             <div className="card">

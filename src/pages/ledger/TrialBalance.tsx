@@ -7,7 +7,7 @@ import { PrintIconButton } from '@/components/common/PrintButton';
 import { PeriodFilter } from '@/components/common/PeriodFilter';
 import { db } from '@/lib/db';
 import { getTrialBalance } from '@/lib/reports';
-import { usePeriodStore, periodRange, periodLabel } from '@/store/usePeriodStore';
+import { usePeriodStore, periodRange } from '@/store/usePeriodStore';
 
 export default function TrialBalance() {
   const { mode, year, month } = usePeriodStore();
@@ -31,9 +31,6 @@ export default function TrialBalance() {
         }
       />
       <PageContainer>
-        <p className="no-print mb-2 text-xs text-muted">
-          {range ? `As on ${periodLabel({ mode, year, month })}` : 'All time'}
-        </p>
         <div className="print-area list-shell">
           <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-border-app px-4 py-2 text-xs uppercase tracking-wider text-muted">
             <span>Account</span>

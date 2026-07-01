@@ -23,7 +23,6 @@ export function DraftBanner({
       <FileClock className="h-4 w-4 shrink-0 text-brand-light" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-foreground">Unsaved draft from {relative}</p>
-        <p className="text-xs text-muted">Pick up where you left off, or start fresh.</p>
       </div>
       <div className="flex shrink-0 gap-1.5">
         <Button type="button" variant="secondary" className="min-h-[36px] px-3 py-1.5 text-xs" onClick={onDiscard}>

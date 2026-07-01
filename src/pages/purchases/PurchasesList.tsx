@@ -48,11 +48,6 @@ export default function PurchasesList() {
           <EmptyState
             icon={ShoppingCart}
             title={(purchases?.length ?? 0) === 0 ? 'No purchases yet' : 'No matching purchases'}
-            description={
-              (purchases?.length ?? 0) === 0
-                ? 'Record stock you buy from vendors.'
-                : 'Try adjusting search.'
-            }
           />
         ) : (
           <div className="list-shell">

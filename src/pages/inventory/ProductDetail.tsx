@@ -8,7 +8,6 @@ import { TopBar } from '@/components/layout/TopBar';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { EntityNotFound } from '@/components/common/EntityNotFound';
-import { MoneyDisplay } from '@/components/common/MoneyDisplay';
 import { StatCard } from '@/components/common/StatCard';
 import { EntityActions } from '@/components/common/EntityActions';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -17,7 +16,6 @@ import { Modal } from '@/components/common/Modal';
 import { ProductForm } from '@/components/forms/ProductForm';
 import { db } from '@/lib/db';
 import { updateProduct } from '@/lib/entities';
-import { multiplyMoney } from '@/lib/money';
 import { adjustStock } from '@/lib/transactions';
 import { stockAdjustmentSchema, type StockAdjustmentFormData } from '@/lib/validators';
 import { getErrorMessage } from '@/lib/errors';
@@ -92,9 +90,6 @@ export default function ProductDetail() {
             <p className="text-xs uppercase tracking-wider text-muted">In Stock</p>
             <p className="mt-1 hero-money text-foreground">
               {product.stockQty} <span className="text-sm font-normal text-muted">{product.unit}</span>
-            </p>
-            <p className="mt-1 text-xs text-muted">
-              Inventory value: <MoneyDisplay amount={multiplyMoney(product.costPrice, product.stockQty)} className="text-xs" />
             </p>
           </div>
 

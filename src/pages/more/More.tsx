@@ -13,35 +13,14 @@ import { getAccountBalance } from '@/lib/accounting';
 type MoreAction = {
   to: string;
   title: string;
-  description: string;
   icon: LucideIcon;
 };
 
 const ACTIONS: MoreAction[] = [
-  {
-    to: '/more/fixed-asset',
-    title: 'Record Fixed Asset',
-    description: 'Equipment, furniture, fixtures — capital purchases',
-    icon: Building2,
-  },
-  {
-    to: '/more/loan',
-    title: 'Loan',
-    description: 'Receive a loan or repay loan principal',
-    icon: Landmark,
-  },
-  {
-    to: '/more/credit-card',
-    title: 'Credit Card',
-    description: 'Pay card bill or record expense charged to card',
-    icon: CreditCard,
-  },
-  {
-    to: '/more/owner-capital',
-    title: "Owner's Capital",
-    description: 'Owner contribution or personal draw',
-    icon: Wallet,
-  },
+  { to: '/more/fixed-asset', title: 'Record Fixed Asset', icon: Building2 },
+  { to: '/more/loan', title: 'Loan', icon: Landmark },
+  { to: '/more/credit-card', title: 'Credit Card', icon: CreditCard },
+  { to: '/more/owner-capital', title: "Owner's Capital", icon: Wallet },
 ];
 
 export default function More() {
@@ -85,10 +64,7 @@ export default function More() {
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand/15">
                     <action.icon className="h-5 w-5 text-brand-light" />
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground">{action.title}</p>
-                    <p className="text-xs text-muted">{action.description}</p>
-                  </div>
+                  <p className="min-w-0 flex-1 text-sm font-medium text-foreground">{action.title}</p>
                   <ChevronRight className="h-5 w-5 shrink-0 text-disabled" />
                 </Link>
               ))}

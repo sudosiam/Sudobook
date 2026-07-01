@@ -76,7 +76,7 @@ export function CustomerForm({
         <Textarea {...register('address')} placeholder="Optional" />
       </Field>
       {!isEdit && (
-        <Field label="Opening Balance (they owe you)" error={errors.openingBalance?.message}>
+        <Field label="Opening Balance" error={errors.openingBalance?.message}>
           <MoneyInput value={watch('openingBalance')} onChange={(v) => setValue('openingBalance', v)} />
         </Field>
       )}

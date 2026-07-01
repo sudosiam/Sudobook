@@ -181,11 +181,6 @@ export default function ExpensesList() {
           <EmptyState
             icon={Receipt}
             title={(expenses?.length ?? 0) === 0 ? 'No expenses yet' : 'No matching expenses'}
-            description={
-              (expenses?.length ?? 0) === 0
-                ? 'Track rent, salaries, electricity and more.'
-                : 'Try adjusting search.'
-            }
           />
         ) : (
           <div className="list-shell">

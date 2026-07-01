@@ -104,10 +104,7 @@ export default function PurchaseDetail() {
 
           {purchase.status !== 'void' && purchase.dueAmount > 0 && (
             <div className="card-accent flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-warning">Amount Due</p>
-                <p className="mt-0.5 text-xs text-muted">Outstanding to vendor</p>
-              </div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-warning">Amount Due</p>
               <MoneyDisplay amount={purchase.dueAmount} tone={docDueTone(purchase.status, purchase.paymentMethod)} className="text-lg font-semibold" />
             </div>
           )}

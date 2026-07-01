@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { TopBar } from '@/components/layout/TopBar';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -94,15 +94,6 @@ export default function NewSale() {
   const total = Math.max(subtractMoney(subtotal, discount || 0), 0);
   const balanceDue = Math.max(subtractMoney(total, paidAmount || 0), 0);
 
-  const paymentStatus =
-    total <= 0
-      ? null
-      : paidAmount <= 0
-        ? 'credit'
-        : balanceDue > 0
-          ? 'partial'
-          : 'completed';
-
   useEffect(() => {
     const prev = prevTotalRef.current;
     const paid = paidAmount ?? 0;
@@ -121,16 +112,6 @@ export default function NewSale() {
       setValue('discount', subtotal, { shouldValidate: true });
     }
   }, [discount, subtotal, setValue]);
-
-  const duplicateProductIds = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of items ?? []) {
-      if (item.productId) {
-        counts.set(item.productId, (counts.get(item.productId) ?? 0) + 1);
-      }
-    }
-    return new Set([...counts.entries()].filter(([, n]) => n > 1).map(([id]) => id));
-  }, [items]);
 
   const addItem = () => {
     append({
@@ -260,26 +241,14 @@ export default function NewSale() {
                 <Plus className="h-4 w-4" /> Add
               </button>
             </div>
-            {productList.length === 0 && (
-              <p className="text-xs text-warning">Add products in Inventory first.</p>
-            )}
+            {productList.length === 0 && null}
             {errors.items?.message && <p className="mb-2 text-xs text-danger">{errors.items.message}</p>}
             <div className="space-y-3">
               {fields.map((f, i) => (
                 <div
                   key={f.id}
-                  className={`rounded-lg border p-3 ${
-                    duplicateProductIds.has(items?.[i]?.productId ?? '')
-                      ? 'border-warning/60 bg-warning/5'
-                      : 'border-border-app'
-                  }`}
+                  className="rounded-lg border border-border-app p-3"
                 >
-                  {duplicateProductIds.has(items?.[i]?.productId ?? '') && (
-                    <p className="mb-2 flex items-center gap-1 text-xs text-warning">
-                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                      Same product on multiple lines — quantities will be combined
-                    </p>
-                  )}
                   <div className="mb-2 flex min-w-0 items-center gap-2">
                     <Select
                       className="min-w-0 flex-1"
@@ -369,9 +338,6 @@ export default function NewSale() {
                 <option value="bank">Bank</option>
                 <option value="upi">UPI</option>
               </Select>
-              <p className="mt-1.5 text-xs text-muted">
-                Amount received below sets full, partial, or credit sale automatically.
-              </p>
             </Field>
 
             {needsBank && (
@@ -404,15 +370,6 @@ export default function NewSale() {
                     className="font-semibold"
                   />
                 </div>
-                {paymentStatus === 'completed' && (
-                  <p className="text-xs text-success">Fully paid</p>
-                )}
-                {paymentStatus === 'partial' && (
-                  <p className="text-xs text-warning">Partial payment — balance will be receivable</p>
-                )}
-                {paymentStatus === 'credit' && (
-                  <p className="text-xs text-warning">Credit sale — full amount due from customer</p>
-                )}
                 {balanceDue > 0 && (
                   <button
                     type="button"

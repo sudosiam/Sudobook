@@ -67,7 +67,7 @@ export default function VendorsList() {
         {!vendors ? (
           <LoadingSpinner />
         ) : filtered.length === 0 ? (
-          <EmptyState icon={Truck} title="No vendors yet" description="Add vendors to track payables." />
+          <EmptyState icon={Truck} title="No vendors yet" />
         ) : (
           <>
             <div className="list-shell">
@@ -85,7 +85,6 @@ export default function VendorsList() {
                     </div>
                     <div className="ml-3 text-right">
                       <MoneyDisplay amount={balance} className="text-sm font-semibold" tone={balance > 0 ? 'expense' : 'neutral'} />
-                      <p className="text-xs text-muted">{balance > 0 ? 'you owe' : 'settled'}</p>
                     </div>
                   </Link>
                 );

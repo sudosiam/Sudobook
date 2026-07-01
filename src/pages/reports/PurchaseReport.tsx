@@ -6,7 +6,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { MoneyDisplay } from '@/components/common/MoneyDisplay';
 import { PrintIconButton } from '@/components/common/PrintButton';
 import { PeriodFilter } from '@/components/common/PeriodFilter';
-import { usePeriodStore, periodRange, periodLabel } from '@/store/usePeriodStore';
+import { usePeriodStore, periodRange } from '@/store/usePeriodStore';
 import { useAppStore } from '@/store/useAppStore';
 import { fyDateRange } from '@/lib/sequences';
 import { db } from '@/lib/db';
@@ -34,9 +34,6 @@ export default function PurchaseReport() {
         }
       />
       <PageContainer>
-        <p className="no-print mb-2 text-xs text-muted">
-          {range ? periodLabel({ mode, year, month }) : `Financial Year ${currentFY}`}
-        </p>
         {!report ? (
           <LoadingSpinner />
         ) : (

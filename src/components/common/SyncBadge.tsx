@@ -44,7 +44,6 @@ export function SyncBadge({ compact = false }: { compact?: boolean }) {
         type="button"
         onClick={() => void syncNow()}
         className="flex min-h-[32px] items-center gap-1 rounded-lg px-1.5 text-xs text-warning"
-        title="Tap to sync now"
       >
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-warning" />
         {failedCount > 0 ? `Failed (${failedCount})` : `Pending (${pendingCount})`}
@@ -57,7 +56,6 @@ export function SyncBadge({ compact = false }: { compact?: boolean }) {
       type="button"
       onClick={() => void syncNow()}
       className="flex min-h-[32px] max-w-[9rem] items-center gap-1 truncate rounded-lg px-1.5 text-xs text-success"
-      title={syncedAgo ? `Last synced ${syncedAgo}` : 'Tap to sync now'}
     >
       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
       {compact ? 'Synced' : syncedAgo ? `Synced ${syncedAgo}` : 'Synced'}

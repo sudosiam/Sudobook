@@ -29,15 +29,10 @@ export default function VendorAging() {
     <>
       <TopBar title="Vendor Aging" right={<PrintIconButton />} />
       <PageContainer>
-        <p className="mb-3 text-xs text-muted">As on {asOf} · Outstanding payables by age</p>
         {!report ? (
           <LoadingSpinner />
         ) : report.rows.length === 0 ? (
-          <EmptyState
-            icon={Truck}
-            title="No outstanding payables"
-            description="Credit purchases with balance due will appear here."
-          />
+          <EmptyState icon={Truck} title="No outstanding payables" />
         ) : (
           <div className="print-area page-stack">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

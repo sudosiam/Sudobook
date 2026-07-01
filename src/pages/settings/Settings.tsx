@@ -156,7 +156,6 @@ export default function Settings() {
           <section>
             <h2 className="mb-2 text-xs uppercase tracking-wider text-muted">Appearance</h2>
             <div className="card">
-              <p className="mb-3 text-sm text-muted">Choose light or dark interface</p>
               <ThemeToggle />
             </div>
           </section>
@@ -170,9 +169,6 @@ export default function Settings() {
                   onChange={(e) => setBusinessName(e.target.value)}
                 />
               </Field>
-              <p className="text-xs text-muted">
-                Financial Year: {settings.currentFY} · Currency: {settings.currency}
-              </p>
               <Button onClick={saveName}>Save</Button>
             </div>
           </section>
@@ -203,10 +199,6 @@ export default function Settings() {
           <section>
             <h2 className="mb-2 text-xs uppercase tracking-wider text-muted">Ledger Repair</h2>
             <div className="space-y-3 card">
-              <p className="text-sm text-muted">
-                If you voided sales, purchases, or expenses before the accounting fix, stray reversal
-                journal entries may have inflated balances. This voids those orphan entries only.
-              </p>
               {orphanCount !== null && (
                 <p className="text-xs text-muted">
                   Orphan reversals found:{' '}
@@ -293,16 +285,6 @@ export default function Settings() {
           <section>
             <h2 className="mb-2 text-xs uppercase tracking-wider text-danger">Danger Zone</h2>
             <div className="space-y-3 rounded-xl border border-danger/30 bg-surface p-4">
-              <p className="text-sm text-muted">
-                Factory reset downloads a full JSON backup first, then permanently erases all sales,
-                purchases, expenses, inventory, ledger entries, and cloud sync data. The app returns to
-                a fresh empty state with default accounts only.
-              </p>
-              {activeUserId && (
-                <p className="text-xs text-warning">
-                  You are signed in — cloud data will also be wiped. Stay online until reset finishes.
-                </p>
-              )}
               <Button variant="danger" className="w-full" onClick={() => setFactoryOpen(true)}>
                 <Trash2 className="h-4 w-4" /> Factory Reset
               </Button>

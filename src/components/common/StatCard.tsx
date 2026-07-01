@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { MoneyDisplay, type MoneyTone } from '@/components/common/MoneyDisplay';
 import { cn } from '@/lib/utils';
@@ -8,7 +7,6 @@ export function StatCard({
   amount,
   tone = 'neutral',
   colored,
-  hint,
   className,
   animate,
   to,
@@ -18,10 +16,8 @@ export function StatCard({
   amount: number;
   tone?: MoneyTone | 'income' | 'expense';
   colored?: boolean;
-  hint?: ReactNode;
   className?: string;
   animate?: boolean;
-  /** Navigate when tapped (BUG-51). */
   to?: string;
   onClick?: () => void;
 }) {
@@ -35,7 +31,6 @@ export function StatCard({
         animate={animate}
         className="block text-lg font-semibold"
       />
-      {hint && <p className="text-[11px] text-muted">{hint}</p>}
     </>
   );
 

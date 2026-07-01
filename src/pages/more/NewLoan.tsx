@@ -62,11 +62,6 @@ export default function NewLoan() {
     <>
       <TopBar title="Loan" />
       <PageContainer>
-        <p className="mb-3 text-xs text-muted">
-          {kind === 'receive'
-            ? 'Money borrowed — debits your cash/bank and credits Loans (202).'
-            : 'Repay loan principal — debits Loans (202) and credits your cash/bank.'}
-        </p>
         <form onSubmit={handleSubmit(onSubmit)} className="page-stack">
           <Field label="Type" error={errors.kind?.message}>
             <Select {...register('kind')}>

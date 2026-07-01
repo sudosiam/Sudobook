@@ -23,11 +23,7 @@ export default function InventoryValuation() {
         {!report ? (
           <LoadingSpinner />
         ) : report.rows.length === 0 ? (
-          <EmptyState
-            icon={Package}
-            title="No inventory"
-            description="Add products to see stock valuation."
-          />
+          <EmptyState icon={Package} title="No inventory" />
         ) : (
           <div className="print-area page-stack">
             <div className="grid grid-cols-2 gap-2">

@@ -36,10 +36,6 @@ export default function BalanceSheet() {
     return getDashboardMetrics(start, end);
   }, [range?.start, range?.end, currentFY]);
 
-  const asOfLabel = range
-    ? `As on ${new Date(range.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
-    : `As on end of FY ${currentFY}`;
-
   if (!bs || !summary) return <LoadingSpinner />;
 
   return (
@@ -55,7 +51,6 @@ export default function BalanceSheet() {
       />
       <PageContainer>
         <div className="print-area flex flex-col gap-2 md:gap-3">
-          <p className="no-print text-[10px] text-muted md:text-xs">{asOfLabel}</p>
           <div className="grid grid-cols-2 gap-1.5 md:gap-2">
             <div className="card p-2 md:p-3">
               <p className="text-[10px] uppercase tracking-wider text-muted md:text-xs">

@@ -5,7 +5,6 @@ import { format } from 'date-fns';
 import { Modal } from '@/components/common/Modal';
 import { Button, Field, FormDateInput, Select } from '@/components/common/Field';
 import { MoneyInput } from '@/components/common/MoneyInput';
-import { MoneyDisplay } from '@/components/common/MoneyDisplay';
 import type { BankAccount } from '@/lib/db';
 import { paymentAgainstDueSchema, type PaymentFormData } from '@/lib/validators';
 
@@ -70,10 +69,6 @@ export function PaymentModal({
   return (
     <Modal open={open} onClose={onClose} title={title}>
       <form onSubmit={(e) => void submit(e)} className="space-y-3">
-        <p className="text-xs text-muted">
-          Outstanding: <MoneyDisplay amount={maxDue} className="text-xs font-semibold" />
-        </p>
-
         <Field label="Date" error={errors.date?.message}>
           <FormDateInput name="date" control={control} />
         </Field>
