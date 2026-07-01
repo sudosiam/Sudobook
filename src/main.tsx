@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from '@/App';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { DbOutdatedBanner } from '@/components/common/DbOutdatedBanner';
+import { PwaUpdateBanner } from '@/components/common/PwaUpdateBanner';
 import { seedDatabase } from '@/lib/seed';
 import { postDueRecurringExpenses } from '@/lib/recurring';
 import { ensureSyncReset, startSyncEngine } from '@/lib/sync';
@@ -62,6 +63,7 @@ async function bootstrap() {
     <StrictMode>
       <ErrorBoundary>
         <DbOutdatedBanner />
+        <PwaUpdateBanner />
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <App />
         </BrowserRouter>

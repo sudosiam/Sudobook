@@ -1,9 +1,9 @@
 {
   "name": "sudo-books",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "module",
-  "description": "Local-first accounting & finance PWA for Biswajit Power Hub",
+  "description": "Local-first accounting & finance PWA",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

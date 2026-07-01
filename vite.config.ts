@@ -10,6 +10,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'prompt',
+      injectRegister: null,
       includeAssets: ['favicon.ico'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
@@ -17,7 +18,7 @@ export default defineConfig({
       manifest: {
         name: 'Sudo Books',
         short_name: 'SudoBooks',
-        description: 'Business Finance & Accounting for Biswajit Power Hub',
+        description: 'Business Finance & Accounting PWA',
         theme_color: '#0b0d10',
         background_color: '#0b0d10',
         display: 'standalone',
