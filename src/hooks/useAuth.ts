@@ -36,10 +36,30 @@ export function useAuth() {
     if (!isDexieCloudConfigured) throw new Error('Cloud sync not configured');
     await db.cloud.login(email ? { email, grant_type: 'otp' } : undefined);
 
-    // Verify the user actually completed the OTP flow.
-    // If the popup was closed or blocked without verifying, isLoggedIn stays false.
-    if (!isCloudLoggedIn()) {
-      throw new Error('Sign-in was not completed — please try again');
+    // db.cloud.login() resolves when the popup closes — either after successful
+    // OTP verification or when the user dismisses the popup. The BehaviorSubject
+    // currentUser.value may not yet reflect the new state by the time we check,
+    // because the observable update is queued as a microtask. Wait up to 2 s for
+    // the first logged-in emission.
+    const loggedIn = await new Promise<boolean>((resolve) => {
+      // Check current state first (may already be updated).
+      if (db.cloud.currentUser.value.isLoggedIn) {
+        resolve(true);
+        return;
+      }
+      const deadline = setTimeout(() => resolve(false), 2000);
+      const sub = db.cloud.currentUser.subscribe((user) => {
+        if (user.isLoggedIn) {
+          clearTimeout(deadline);
+          sub.unsubscribe();
+          resolve(true);
+        }
+      });
+    });
+
+    if (!loggedIn) {
+      // Popup was dismissed without completing OTP — not an error, just inform.
+      throw new Error('Sign-in not completed — please enter the code from the email');
     }
 
     toast.success('Signed in — pulling your cloud data…');
