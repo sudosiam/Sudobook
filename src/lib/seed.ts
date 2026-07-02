@@ -1,8 +1,18 @@
-import { db, now, type Account, type AppSettings, type BankAccount } from '@/lib/db';
+import { db, type Account, type AppSettings, type BankAccount } from '@/lib/db';
 import { DEFAULT_ACCOUNTS, CODES, accountUuid, CASH_DRAWER_ID } from '@/lib/coa';
 import { syncDefaultCategories } from '@/lib/categories';
 import { getCurrentFY } from '@/lib/sequences';
 import { INITIAL_MIGRATION_TOKENS, runMigrations } from '@/lib/migrations/runner';
+
+/**
+ * Sentinel timestamp used for ALL deterministic seed records (chart of accounts,
+ * cash drawer, default product categories). Using a fixed past date ensures that
+ * any real data from the cloud — which has genuine timestamps — is always NEWER
+ * and wins in Dexie Cloud's last-write-wins conflict resolution. Without this, a
+ * Device 2 first-boot seed (updatedAt = now) would silently overwrite Device 1's
+ * cloud data (e.g., a cash drawer with a real openingBalance).
+ */
+const SEED_EPOCH = '2020-01-01T00:00:00.000Z';
 
 /** Short random per-device code (e.g. "A3F9K2") keeps document numbers unique across devices. */
 function makeDeviceId(): string {
@@ -34,8 +44,8 @@ async function seedMissingAccountsTx(): Promise<boolean> {
       normalBalance: seed.normalBalance,
       parentCode: seed.parentCode,
       isActive: true,
-      createdAt: now(),
-      updatedAt: now(),
+      createdAt: SEED_EPOCH,
+      updatedAt: SEED_EPOCH,
     };
     await db.accounts.add(account);
     added = true;
@@ -69,8 +79,8 @@ async function ensureCashDrawerTx(): Promise<void> {
       accountType: 'cash',
       openingBalance: 0,
       isActive: true,
-      createdAt: now(),
-      updatedAt: now(),
+      createdAt: SEED_EPOCH,
+      updatedAt: SEED_EPOCH,
     } satisfies BankAccount;
     await db.bankAccounts.add(cashDrawer);
   }
@@ -122,8 +132,8 @@ export async function seedDatabase(): Promise<void> {
           accountType: 'cash',
           openingBalance: 0,
           isActive: true,
-          createdAt: now(),
-          updatedAt: now(),
+          createdAt: SEED_EPOCH,
+          updatedAt: SEED_EPOCH,
         } satisfies BankAccount;
         await db.bankAccounts.add(cashDrawer);
       }

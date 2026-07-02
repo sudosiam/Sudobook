@@ -1,5 +1,8 @@
 import { db, now, uuid, type ProductCategory } from '@/lib/db';
 
+/** Same sentinel epoch as seed.ts — ensures cloud data always wins over local seed. */
+const SEED_EPOCH = '2020-01-01T00:00:00.000Z';
+
 export interface CategorySeed {
   id: string; // deterministic UUID — same on every device (Supabase requires uuid)
   legacySlug?: string; // old slug id before category-slug-to-uuid-v1 migration
@@ -65,8 +68,8 @@ export async function syncDefaultCategories(): Promise<void> {
         skuPrefix: seed.skuPrefix,
         skuSeq: 0,
         isActive: true,
-        createdAt: now(),
-        updatedAt: now(),
+        createdAt: SEED_EPOCH,
+        updatedAt: SEED_EPOCH,
       };
       await db.productCategories.add(category);
     }

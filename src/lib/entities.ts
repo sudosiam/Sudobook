@@ -417,6 +417,7 @@ export async function createProduct(data: ProductFormData): Promise<string> {
 
     if (data.stockQty > 0) {
 
+      const mvTs = now();
       const mv = {
 
         id: uuid(),
@@ -425,7 +426,7 @@ export async function createProduct(data: ProductFormData): Promise<string> {
 
         productName: data.name,
 
-        date: now().slice(0, 10),
+        date: mvTs.slice(0, 10),
 
         type: 'opening' as const,
 
@@ -435,7 +436,9 @@ export async function createProduct(data: ProductFormData): Promise<string> {
 
         reference: 'OPENING',
 
-        createdAt: now(),
+        createdAt: mvTs,
+
+        updatedAt: mvTs,
 
       };
 

@@ -257,6 +257,7 @@ export interface StockMovement {
   linkedId?: string;
   note?: string;
   createdAt: string;
+  updatedAt: string; // same as createdAt (immutable records) — needed for Dexie Cloud conflict resolution
   syncedAt?: string;
 }
 
@@ -362,6 +363,15 @@ class SudoBooksDB extends Dexie {
         requireAuth: false,
         nameSuffix: false,
         socialAuth: false,
+        // Let Dexie Cloud use the existing PWA service worker for background sync
+        // so data syncs even when the app is minimised / not in the foreground.
+        tryUseServiceWorker: true,
+        // Periodic Background Sync API (Chrome/Android) — request a sync every
+        // 30 minutes even when the app is closed. Falls back gracefully on
+        // browsers that do not support the API.
+        periodicSync: {
+          minInterval: 30 * 60 * 1000,
+        },
         // These tables live on-device only — never uploaded to the cloud.
         unsyncedTables: ['settings', 'dashboardCache', 'backupSnapshots', 'backupFolder'],
       });

@@ -102,6 +102,7 @@ async function recordStockMovement(
   const product = await db.products.get(productId);
   if (!product) throw new Error('Product not found');
   const balanceAfter = product.stockQty + qtyChange;
+  const ts = now();
   const mv: StockMovement = {
     id: uuid(),
     productId: product.id,
@@ -110,7 +111,8 @@ async function recordStockMovement(
     qtyChange,
     balanceAfter,
     ...data,
-    createdAt: now(),
+    createdAt: ts,
+    updatedAt: ts,
   };
   await db.stockMovements.add(mv);
   return balanceAfter;
