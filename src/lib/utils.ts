@@ -7,8 +7,7 @@ export function cn(...inputs: ClassValue[]): string {
 }
 
 /**
- * UUID v4 — works in non-secure contexts (e.g. LAN HTTP on mobile) where
- * `crypto.randomUUID` is unavailable.
+ * UUID v4 — uses Web Crypto only (no Math.random() fallback).
  */
 export function generateUuid(): string {
   const c = globalThis.crypto;
@@ -24,8 +23,5 @@ export function generateUuid(): string {
     const b = [...bytes].map(hex).join('');
     return `${b.slice(0, 8)}-${b.slice(8, 12)}-${b.slice(12, 16)}-${b.slice(16, 20)}-${b.slice(20)}`;
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
-    const r = (Math.random() * 16) | 0;
-    return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-  });
+  throw new Error('Secure random unavailable — open the app over HTTPS or reload the page.');
 }

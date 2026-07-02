@@ -29,6 +29,7 @@ import {
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
+import { formatStorageBytes, getStorageEstimate, type StorageEstimate } from '@/lib/storageEstimate';
 import { APP_VERSION } from '@/lib/version';
 
 export default function Settings() {
@@ -44,6 +45,7 @@ export default function Settings() {
   const [orphanCount, setOrphanCount] = useState<number | null>(null);
   const [factoryOpen, setFactoryOpen] = useState(false);
   const [pendingSnapshotId, setPendingSnapshotId] = useState<string | null>(null);
+  const [storageInfo, setStorageInfo] = useState<StorageEstimate | null>(null);
 
   const localSnapshots = useLiveQuery(
     () => db.backupSnapshots.orderBy('createdAt').reverse().limit(5).toArray(),
@@ -53,6 +55,10 @@ export default function Settings() {
   useEffect(() => {
     if (settings?.businessName) setBusinessName(settings.businessName);
   }, [settings?.businessName]);
+
+  useEffect(() => {
+    void getStorageEstimate().then(setStorageInfo);
+  }, []);
 
   if (!settings) return <LoadingSpinner />;
 
@@ -222,6 +228,28 @@ export default function Settings() {
           <section>
             <h2 className="mb-2 text-xs uppercase tracking-wider text-muted">Data Management</h2>
             <div className="space-y-4 card">
+              {storageInfo && (
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-wider text-muted">Device storage</p>
+                  <p className="text-sm text-foreground">
+                    {formatStorageBytes(storageInfo.usedBytes)} of{' '}
+                    {formatStorageBytes(storageInfo.quotaBytes)} used
+                  </p>
+                  <div className="h-2 overflow-hidden rounded-full bg-app">
+                    <div
+                      className="h-full rounded-full bg-brand transition-all"
+                      style={{
+                        width: `${Math.min(100, (storageInfo.usedBytes / storageInfo.quotaBytes) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  {storageInfo.usedBytes / storageInfo.quotaBytes > 0.8 && (
+                    <p className="text-xs text-warning">
+                      Storage nearly full — enable automatic backup and export old data if needed.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="space-y-3">
                 <label className="flex min-h-[48px] cursor-pointer items-center justify-between gap-3">
                   <span className="text-sm text-foreground">Automatic backup</span>

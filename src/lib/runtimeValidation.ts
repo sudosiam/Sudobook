@@ -1,4 +1,5 @@
 import { db, type BankAccount } from '@/lib/db';
+import { MAX_PAISE } from '@/lib/validators';
 
 /** ISO calendar date YYYY-MM-DD */
 export function assertIsoDate(date: string): void {
@@ -11,6 +12,9 @@ export function assertIsoDate(date: string): void {
 export function assertPositivePaise(amount: number, label = 'Amount'): void {
   if (!Number.isInteger(amount) || amount < 1) {
     throw new Error(`${label} must be greater than zero`);
+  }
+  if (amount > MAX_PAISE) {
+    throw new Error(`${label} exceeds ₹10 crore limit`);
   }
 }
 

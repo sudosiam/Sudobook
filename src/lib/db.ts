@@ -316,9 +316,10 @@ export interface BackupSnapshot {
   label: 'auto' | 'manual';
   file: {
     app: 'sudo-books';
-    version: 1;
+    version: 1 | 2;
     exportedAt: string;
     data: Record<string, unknown[]>;
+    checksum?: string;
   };
 }
 

@@ -7,8 +7,9 @@ import { INITIAL_MIGRATION_TOKENS, runMigrations } from '@/lib/migrations/runner
 
 /** Short random per-device code (e.g. "A3F9K2") keeps document numbers unique across devices. */
 function makeDeviceId(): string {
-  const n = Math.floor(Math.random() * 36 ** 6);
-  return n.toString(36).padStart(6, '0').toUpperCase();
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 6).toUpperCase();
 }
 
 /** Account codes required before any sale/purchase/expense can post. */

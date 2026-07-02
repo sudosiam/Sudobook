@@ -5,9 +5,35 @@ import {
   getBankEntryReason,
   reasonAllowsCategoryOverride,
 } from '@/lib/bankEntryReasons';
+import {
+  sanitizeAccountNumber,
+  sanitizeOptionalText,
+  sanitizeText,
+} from '@/lib/sanitize';
 
-const paise = z.number().int('Must be a whole paise amount').min(0, 'Cannot be negative');
-const positivePaise = z.number().int().min(1, 'Amount required');
+const safeText = (message: string, max = 200) =>
+  z.string().min(1, message).max(max).transform(sanitizeText);
+
+const optionalSafeText = (max = 2000) =>
+  z
+    .string()
+    .max(max)
+    .optional()
+    .transform((value) => sanitizeOptionalText(value));
+
+/** ₹10 crore — upper bound for a single amount field (paise). */
+export const MAX_PAISE = 10_000_000_000;
+
+const paise = z
+  .number()
+  .int('Must be a whole paise amount')
+  .min(0, 'Cannot be negative')
+  .max(MAX_PAISE, 'Amount exceeds ₹10 crore limit');
+const positivePaise = z
+  .number()
+  .int()
+  .min(1, 'Amount required')
+  .max(MAX_PAISE, 'Amount exceeds ₹10 crore limit');
 
 /** Account code that must fall inside the expense range (502–599), excluding COGS. */
 const expenseCode = z
@@ -24,7 +50,7 @@ const isoDate = z
 export const saleItemSchema = z
   .object({
     productId: z.string().min(1, 'Select a product'),
-    productName: z.string().min(1),
+    productName: safeText('Product name required'),
     qty: z.number().int().min(1, 'Qty ≥ 1'),
     unitPrice: paise,
     costPrice: paise,
@@ -39,14 +65,14 @@ export const saleSchema = z
   .object({
     date: isoDate,
     customerId: z.string().optional(),
-    customerName: z.string().min(1, 'Customer name required'),
+    customerName: safeText('Customer name required'),
     items: z.array(saleItemSchema).min(1, 'Add at least one item'),
     discount: paise,
     /** How the received portion was paid — full/partial/credit is derived from paidAmount vs total. */
     paymentMethod: z.enum(['cash', 'bank', 'upi']),
     bankAccountId: z.string().optional(),
     paidAmount: paise,
-    notes: z.string().optional(),
+    notes: optionalSafeText(),
   })
   .refine(
     (v) => {
@@ -74,7 +100,7 @@ export const saleSchema = z
 export const purchaseItemSchema = z
   .object({
     productId: z.string().min(1, 'Select a product'),
-    productName: z.string().min(1),
+    productName: safeText('Product name required'),
     qty: z.number().int().min(1, 'Qty ≥ 1'),
     unitCost: paise,
     total: paise,
@@ -88,13 +114,13 @@ export const purchaseSchema = z
   .object({
     date: isoDate,
     vendorId: z.string().min(1, 'Select a vendor'),
-    vendorName: z.string().min(1),
+    vendorName: safeText('Vendor name required'),
     items: z.array(purchaseItemSchema).min(1, 'Add at least one item'),
     discount: paise,
     paymentMethod: z.enum(['cash', 'bank', 'upi', 'partial', 'credit']),
     bankAccountId: z.string().optional(),
     paidAmount: paise,
-    notes: z.string().optional(),
+    notes: optionalSafeText(),
   })
   .refine(
     (v) => (v.paymentMethod === 'bank' || v.paymentMethod === 'upi' ? !!v.bankAccountId : true),
@@ -138,8 +164,8 @@ export const expenseSchema = z
   .object({
     date: isoDate,
     accountCode: expenseCode,
-    category: z.string().min(1, 'Category required'),
-    description: z.string().min(1, 'Description required'),
+    category: safeText('Category required'),
+    description: safeText('Description required'),
     amount: positivePaise,
     paidFrom: z.enum(['cash', 'bank']),
     bankAccountId: z.string().optional(),
@@ -150,7 +176,7 @@ export const expenseSchema = z
   });
 
 export const customerSchema = z.object({
-  name: z.string().min(1, 'Name required'),
+  name: safeText('Name required'),
   phone: z
     .string()
     .min(1, 'Phone required')
@@ -158,13 +184,13 @@ export const customerSchema = z.object({
     .refine((s) => /^[6-9]\d{9}$/.test(s), {
       message: 'Enter a valid 10-digit Indian mobile number',
     }),
-  address: z.string().optional(),
+  address: optionalSafeText(500),
   openingBalance: paise,
-  notes: z.string().optional(),
+  notes: optionalSafeText(),
 });
 
 export const vendorSchema = z.object({
-  name: z.string().min(1, 'Name required'),
+  name: safeText('Name required'),
   phone: z
     .string()
     .min(1, 'Phone required')
@@ -172,17 +198,17 @@ export const vendorSchema = z.object({
     .refine((s) => /^[6-9]\d{9}$/.test(s), {
       message: 'Enter a valid 10-digit Indian mobile number',
     }),
-  company: z.string().optional(),
-  address: z.string().optional(),
+  company: optionalSafeText(),
+  address: optionalSafeText(500),
   openingBalance: paise,
-  notes: z.string().optional(),
+  notes: optionalSafeText(),
 });
 
 export const productSchema = z.object({
-  sku: z.string().min(1, 'SKU required'),
-  name: z.string().min(1, 'Name required'),
+  sku: safeText('SKU required', 32),
+  name: safeText('Name required'),
   category: z.string().min(1, 'Category required'),
-  unit: z.string().min(1, 'Unit required'),
+  unit: safeText('Unit required', 16),
   costPrice: paise,
   sellingPrice: paise,
   stockQty: z.number().int().min(0),
@@ -190,7 +216,7 @@ export const productSchema = z.object({
 });
 
 export const productCategorySchema = z.object({
-  name: z.string().min(1, 'Name required'),
+  name: safeText('Name required'),
   skuPrefix: z
     .string()
     .min(1, 'Prefix required')
@@ -201,9 +227,14 @@ export const productCategorySchema = z.object({
 export type ProductCategoryFormData = z.infer<typeof productCategorySchema>;
 
 export const bankAccountSchema = z.object({
-  name: z.string().min(1, 'Name required'),
-  bankName: z.string().min(1, 'Bank name required'),
-  accountNumber: z.string().min(1, 'Account number required'),
+  name: safeText('Name required'),
+  bankName: safeText('Bank name required'),
+  accountNumber: z
+    .string()
+    .min(4, 'Account number required')
+    .max(24)
+    .transform(sanitizeAccountNumber)
+    .refine((s) => s.length >= 4, { message: 'Account number required' }),
   accountType: z.enum(['current', 'savings', 'cash']),
   openingBalance: paise,
 });
@@ -214,7 +245,7 @@ export const paymentSchema = z
     amount: positivePaise,
     method: z.enum(['cash', 'bank', 'upi']),
     bankAccountId: z.string().optional(),
-    note: z.string().optional(),
+    note: optionalSafeText(),
   })
   .refine((v) => (v.method === 'cash' ? true : !!v.bankAccountId), {
     message: 'Select a bank account',
@@ -235,7 +266,7 @@ export const transferSchema = z
     fromBankId: z.string().min(1, 'Select source'),
     toBankId: z.string().min(1, 'Select destination'),
     amount: positivePaise,
-    note: z.string().optional(),
+    note: optionalSafeText(),
   })
   .refine((v) => v.fromBankId !== v.toBankId, {
     message: 'Source and destination must differ',
@@ -245,13 +276,13 @@ export const transferSchema = z
 export const stockAdjustmentSchema = z.object({
   date: isoDate,
   newQty: z.number().int().min(0, 'Qty ≥ 0'),
-  note: z.string().min(1, 'Reason required'),
+  note: safeText('Reason required'),
 });
 
 export const fixedAssetPurchaseSchema = z
   .object({
     date: isoDate,
-    description: z.string().min(1, 'Description required'),
+    description: safeText('Description required'),
     amount: positivePaise,
     paidFrom: z.enum(['cash', 'bank']),
     bankAccountId: z.string().optional(),
@@ -263,7 +294,7 @@ export const fixedAssetPurchaseSchema = z
 
 const bankPaidFromFields = {
   date: isoDate,
-  description: z.string().min(1, 'Description required'),
+  description: safeText('Description required'),
   amount: positivePaise,
   paidFrom: z.enum(['cash', 'bank'] as const),
   bankAccountId: z.string().optional(),
@@ -292,7 +323,7 @@ export const ownerCapitalSchema = z
 export const creditCardSchema = z
   .object({
     date: isoDate,
-    description: z.string().min(1, 'Description required'),
+    description: safeText('Description required'),
     amount: positivePaise,
     kind: z.enum(['payment', 'charge']),
     accountCode: expenseCode.optional(),
@@ -324,7 +355,7 @@ export const manualBankEntrySchema = z
     counterpartyBankId: z.string().optional(),
     accountCode: z.number().int().optional(),
     amount: positivePaise,
-    description: z.string().min(1, 'Description required'),
+    description: safeText('Description required'),
   })
   .superRefine((v, ctx) => {
     const config = getBankEntryReason(v.reason);
@@ -380,14 +411,14 @@ export const manualBankEntrySchema = z
 
 export const recurringExpenseSchema = z
   .object({
-    name: z.string().min(1, 'Name required'),
+    name: safeText('Name required'),
     accountCode: expenseCode,
-    category: z.string().min(1),
-    description: z.string().min(1, 'Description required'),
+    category: safeText('Category required'),
+    description: safeText('Description required'),
     amount: positivePaise,
     paidFrom: z.enum(['cash', 'bank']),
     bankAccountId: z.string().optional(),
-    dayOfMonth: z.coerce.number().int().min(1).max(28),
+    dayOfMonth: z.coerce.number().int().min(1).max(31),
   })
   .refine((v) => (v.paidFrom === 'bank' ? !!v.bankAccountId : true), {
     message: 'Select a bank account',

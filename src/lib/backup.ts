@@ -39,9 +39,16 @@ const REMOTE_TABLE: Record<string, string> = {
 
 export interface BackupFile {
   app: 'sudo-books';
-  version: 1;
+  version: 1 | 2;
   exportedAt: string;
   data: Record<string, unknown[]>;
+  /** SHA-256 hex of JSON.stringify(data) — backup v2+. */
+  checksum?: string;
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export async function exportBackup(): Promise<BackupFile> {
@@ -49,7 +56,15 @@ export async function exportBackup(): Promise<BackupFile> {
   for (const t of TABLES) {
     data[t] = await db.table(t).toArray();
   }
-  return { app: 'sudo-books', version: 1, exportedAt: new Date().toISOString(), data };
+  const payload = JSON.stringify(data);
+  const checksum = await sha256Hex(payload);
+  return {
+    app: 'sudo-books',
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    data,
+    checksum,
+  };
 }
 
 export function downloadBackup(backup: BackupFile, filenamePrefix = 'sudo-books-backup'): void {
@@ -88,6 +103,12 @@ export async function saveBackupSnapshot(
 
 export async function restoreBackup(backup: BackupFile): Promise<void> {
   if (backup.app !== 'sudo-books') throw new Error('Not a Sudo Books backup file');
+  if (backup.checksum) {
+    const actual = await sha256Hex(JSON.stringify(backup.data));
+    if (actual !== backup.checksum) {
+      throw new Error('Backup file is corrupted or was edited — checksum mismatch');
+    }
+  }
   const restoredAt = now();
 
   await db.transaction('rw', db.tables, async () => {

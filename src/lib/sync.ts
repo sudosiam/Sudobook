@@ -22,8 +22,12 @@ export { getSupabaseSchemaStatus, verifySupabaseSchema };
 const MAX_RETRIES = 3;
 const SYNC_BATCH_SIZE = 100;
 const PULL_PAGE_SIZE = 500;
+/** Background sync interval while the app is open and online. */
+const SYNC_INTERVAL_MS = 10_000;
 /** Warn once when the outbound sync backlog may threaten IndexedDB quota. */
 const SYNC_QUEUE_WARN_SIZE = 500;
+/** Drop unrecoverable failed queue rows after this many days (local data kept). */
+const FAILED_SYNC_PURGE_DAYS = 90;
 
 const warnedFailedSync = new Set<string>();
 const warnedQueueBacklog = { value: false };
@@ -188,6 +192,24 @@ async function warnSyncQueueBacklog(): Promise<void> {
   );
 }
 
+/** Remove ancient permanent-failure queue rows so IndexedDB does not fill with dead retries. */
+async function purgeAbandonedFailedSync(): Promise<void> {
+  const cutoff = new Date(Date.now() - FAILED_SYNC_PURGE_DAYS * 86_400_000).toISOString();
+  const abandoned = await db.syncQueue
+    .where('status')
+    .equals('failed')
+    .filter(
+      (item) =>
+        item.timestamp < cutoff &&
+        (item.permanentFailure === true || item.retryCount >= MAX_RETRIES),
+    )
+    .toArray();
+  if (abandoned.length === 0) return;
+  await db.transaction('rw', db.syncQueue, async () => {
+    for (const item of abandoned) await db.syncQueue.delete(item.id);
+  });
+}
+
 async function freshQueuePayload(item: SyncQueueItem): Promise<unknown> {
   if (item.operation === 'delete') return item.data;
   const localTable = LOCAL_BY_REMOTE.get(item.table as RemoteSyncTable);
@@ -268,6 +290,7 @@ export async function processSyncQueue(): Promise<void> {
     if (!userId) return;
 
     await coalesceSyncQueue();
+    await purgeAbandonedFailedSync();
     await warnSyncQueueBacklog();
 
     let hadFailure = false;
@@ -645,7 +668,7 @@ export function startSyncEngine(): void {
     triggerSync();
   }
   if (intervalId === null) {
-    intervalId = setInterval(() => triggerSync(), 30_000);
+    intervalId = setInterval(() => triggerSync(), SYNC_INTERVAL_MS);
   }
   if (typeof window !== 'undefined' && !listenersAttached) {
     window.addEventListener('online', handleOnline);

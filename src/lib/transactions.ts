@@ -847,6 +847,7 @@ export async function transferBetweenBanks(input: {
       });
     },
   );
+  requestSync();
 }
 
 const ADJUSTMENT_STORES = [db.bankTransactions, db.journalEntries, db.syncQueue] as const;

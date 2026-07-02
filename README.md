@@ -1,35 +1,63 @@
 # Sudo Books
 
-**v2.1.12** — Local-first accounting & finance PWA for [Biswajit Power Hub](https://www.biswajitpowerhub.com) (EV showroom, Berhampore, West Bengal).
+**v3.0.0** — Local-first accounting & finance PWA for [Biswajit Power Hub](https://www.biswajitpowerhub.com) (EV showroom, Berhampore, West Bengal).
 
-Not an invoicing app. No GST. A complete **double-entry accounting**, inventory, banking, and reporting system for a single owner — Indian Rupee (INR), April–March financial year, mobile-first Android PWA.
+Complete **double-entry bookkeeping**, inventory, banking, AR/AP, and financial reports for a **solo owner**. Indian Rupee (INR) only, April–March financial year, mobile-first Android PWA. **Not** an invoicing app. **No GST.**
 
-## Features
+---
 
-| Area | Capabilities |
-|---|---|
-| **Sales** | Record sales, partial/credit payments, customer AR, statements, aging |
-| **Purchases** | Vendor AP, payables, purchase reports |
-| **Expenses** | Categories (default + custom 508–599), recurring expenses |
-| **Inventory** | Products, categories, stock, valuation report |
-| **Banking** | Multi-bank accounts, transfers, manual entries |
-| **Accounting** | General ledger, trial balance, chart of accounts |
-| **Reports** | P&L, balance sheet, cash flow, sales/purchase/expense reports, growth analytics |
-| **More** | Fixed assets, loans, credit cards, owner capital |
-| **Sync** | Optional Supabase cloud backup; works fully offline |
+## What it does
+
+| Module | Capabilities |
+|--------|----------------|
+| **Dashboard** | FY metrics, revenue trend, net worth, low-stock alerts; cached for speed |
+| **Sales** | Line items, discounts, cash/bank/UPI, credit & partial payments, customer AR, void |
+| **Purchases** | Vendor AP, discounts, weighted-average inventory cost, partial payments, void |
+| **Expenses** | Chart-of-accounts categories (502–599), custom categories (508–599), recurring (days 1–31) |
+| **Inventory** | Products, categories, SKU auto-numbering, stock movements, valuation report |
+| **Customers / Vendors** | Opening balances, statements, aging reports, outstanding payment lists |
+| **Banking** | Cash + bank accounts, transfers (with GL), manual entries, reconciliation, void/reverse |
+| **Ledger** | General ledger, trial balance, chart of accounts |
+| **Reports** | P&L, balance sheet, cash flow, sales/purchase/expense reports, inventory valuation |
+| **Growth** | Top customers, sales mix, average sale, net-worth series |
+| **More** | Fixed assets, loans, credit cards, owner capital contributions & draws |
+| **Settings** | Business name, theme, cloud auth, sync panel, backup/restore, ledger repair, factory reset |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  React UI  →  Dexie (IndexedDB)  ←  source of truth       │
+│       ↑              ↓                                       │
+│  useLiveQuery    syncQueue  →  Supabase (optional backup)   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **Local-first:** All reads/writes go through Dexie. The app works fully offline without configuration.
+- **Double-entry:** Every money event posts a balanced journal entry. Account balances are **computed** from journal lines, never stored on accounts.
+- **Paise integers:** All money is integer paise (₹1 = 100). Use `src/lib/money.ts` only — no floating-point money math.
+- **Immutable journals:** Posted entries are never deleted; mistakes are corrected by voiding (`status: 'void'`) or reversing entries.
+
+See [`.cursorrules`](.cursorrules) for full coding conventions.
+
+---
 
 ## Stack
 
-React 18 · Vite 5 · TypeScript (strict) · Tailwind v4 · Dexie 4 (IndexedDB) · Supabase v2 (optional sync) · Zustand · React Router 6 · React Hook Form + Zod · Recharts · Motion · vite-plugin-pwa
+| Layer | Technology |
+|-------|------------|
+| UI | React 18, React Router 6, Tailwind CSS v4, Motion |
+| Forms | React Hook Form + Zod (with input sanitization) |
+| Local DB | Dexie 4 + dexie-react-hooks (schema **v5**) |
+| Cloud sync | Supabase v2 (optional) — JSONB mirror + RLS |
+| State | Zustand (app, sync, toast, theme, period) |
+| Charts | Recharts |
+| Build | Vite 5 + vite-plugin-pwa |
+| Deploy | Vercel (SPA rewrites + security headers) |
 
-## Iron rules (never break these)
-
-1. **Paise integers** — every money value is stored as integer paise (₹1 = 100). Use `src/lib/money.ts` only.
-2. **Double-entry** — every money movement posts a balanced journal entry via `postJournalEntry()`. Balances are computed from entries, never stored.
-3. **Local-first** — UI reads Dexie; writes go to Dexie + sync queue. Supabase is backup, not primary.
-4. **UUID keys**, **ISO date strings**, **no `any`**, **Tailwind only**, **mobile-first** (390px baseline).
-
-See `.cursorrules` for the full project conventions.
+---
 
 ## Getting started
 
@@ -38,55 +66,138 @@ npm install
 npm run dev          # http://localhost:5173
 ```
 
-The app works **fully offline** with no configuration. First run seeds the chart of accounts, cash drawer, and settings into IndexedDB.
+First launch seeds the chart of accounts, cash drawer, product categories, and settings. Data migrations run automatically (tracked in `settings.migrations`).
 
 ### Optional: cloud sync (Supabase)
 
-1. Create a Supabase project.
-2. Run migrations in `supabase/migrations/` **in numeric order** (001 → 007).  
-   Existing projects that skipped 006/007 can run `supabase/migrations/RUN_ME_PENDING.sql` once instead.
-3. Copy `.env.example` → `.env.local`:
+1. Create a [Supabase](https://supabase.com) project and enable **Email** auth.
+2. Run SQL migrations in `supabase/migrations/` **in numeric order** (001 → 007).  
+   Skipped 006/007 before? Run [`supabase/migrations/RUN_ME_PENDING.sql`](supabase/migrations/RUN_ME_PENDING.sql) once.
+3. Copy [`.env.example`](.env.example) → `.env.local` and fill in URL + anon key.
+4. Restart dev server. Sign in under **Settings → Cloud Account**.
 
-   ```
-   VITE_SUPABASE_URL=https://your-project.supabase.co
-   VITE_SUPABASE_ANON_KEY=your-anon-key
-   ```
+Details: [`supabase/README.md`](supabase/README.md)
 
-4. Restart `npm run dev`. Sync pushes queued changes every 30s and on reconnect.
+---
 
-Cloud rows mirror Dexie records as JSONB (`id`, `user_id`, `data`, `updated_at`, `deleted_at`) with per-user Row Level Security.
+## Sync engine
 
-## Scripts
+| Trigger | When |
+|---------|------|
+| **Interval** | Every **10 seconds** while online |
+| **After writes** | ~2 s debounce (`requestSync`) |
+| **Reconnect** | `online` event, window focus, tab visible |
+| **Manual** | Settings → Sync Now |
 
-| Script | Description |
-|---|---|
-| `npm run dev` | Dev server with HMR |
-| `npm run build` | Type-check + production PWA build → `dist/` |
-| `npm run preview` | Serve the production build locally |
-| `npm run typecheck` | TypeScript only (`tsc -b --noEmit`) |
-| `npm run gen:icons` | Regenerate PWA icons in `public/icons/` |
+**Push:** `syncQueue` batches (100/run) → Supabase upsert; deletes set `deleted_at`. Duplicate queue rows coalesce (delete wins). Failed permanent rows purge after 90 days.
 
-Dev/ops helpers live in `scripts/` — see [scripts/README.md](scripts/README.md).
+**Pull:** Incremental by `updated_at` watermarks (`lastPullAt` + per-table `lastPullAtByTable`). 500 rows/page. Skips rows with pending local edits. Never re-applies remote data over a local voided journal.
 
-## Project structure
+**Document numbers:** Per-device suffix (e.g. `SALE-2026-001-A3F9K2`) avoids cross-device collisions. Settings/sequences are local-only.
+
+---
+
+## Database (Dexie v5)
+
+| Store | Synced to cloud? | Purpose |
+|-------|------------------|---------|
+| `accounts`, `journalEntries` | Yes | Chart of accounts + double-entry ledger |
+| `customers`, `vendors` | Yes | Parties with opening balances |
+| `products`, `productCategories`, `stockMovements` | Yes | Inventory |
+| `sales`, `purchases`, `expenses`, `recurringExpenses` | Yes | Business documents |
+| `bankAccounts`, `bankTransactions` | Yes | Cash/bank register |
+| `syncQueue` | No | Outbound sync backlog |
+| `settings` | No | Singleton app config, sequences, watermarks |
+| `dashboardCache` | No | Computed dashboard metrics |
+| `backupSnapshots` | No | Rolling on-device backup copies (max 5) |
+
+**Schema bumps:** edit `src/lib/db.ts` `version(n).stores()`.  
+**Data migrations:** append to `src/lib/migrations/registry.ts` (run inside Dexie transactions).
+
+---
+
+## Chart of accounts
+
+| Range | Accounts |
+|-------|----------|
+| **100–199 Assets** | 101 Cash, 102 Bank, 103 Receivable, 104 Inventory, 105 Fixed Assets |
+| **200–299 Liabilities** | 201 Payable, 202 Loans, 203 Credit Cards |
+| **300–399 Equity** | 301 Owner's Capital, 302 Retained Earnings |
+| **400–499 Income** | 401 Product Sales, 402 Other Income |
+| **500–599 Expenses** | 501 COGS, 502–507 default expenses, 508–599 user categories |
+
+Bank sub-accounts (HDFC, SBI, etc.) all post to COA **102**; per-bank balances come from `bankTransactions`, not separate GL accounts.
+
+---
+
+## Backup & data safety
+
+| Feature | Location |
+|---------|----------|
+| **Export JSON** | Settings → Download JSON / Backup now |
+| **Checksum** | Backup v2 includes SHA-256 — restore rejects tampered files |
+| **Automatic backup** | Daily / weekly / monthly; optional download + local snapshots |
+| **Storage meter** | Settings shows IndexedDB quota usage |
+| **Factory reset** | Downloads backup first, then wipes local + cloud (when signed in) |
+
+Keep downloaded `.json` files in Google Drive or email — they survive app uninstall.
+
+---
+
+## Security
+
+- **Input sanitization** — HTML/control chars stripped on all text fields (Zod transforms)
+- **CSP + HSTS** — strict headers via `vercel.json` (`frame-ancestors 'none'`, Supabase-only `connect-src`)
+- **Auth cooldown** — 5 failed sign-ins → 60 s lockout (client-side)
+- **Bank numbers masked** — last 4 digits in UI (`•••• 1234`)
+- **Amount cap** — ₹10 crore max per field
+- **RLS** — Supabase rows scoped to `auth.uid() = user_id` (anon key is public by design)
+
+IndexedDB data is **plaintext on device** — physical access to an unlocked phone exposes records. Use device lock + backups.
+
+---
+
+## Performance
+
+- **Virtual scrolling** — Sales & product lists (`@tanstack/react-virtual`, 50 rows/page)
+- **Dashboard cache** — metrics stored in Dexie; invalidated on every journal post/void
+- **Stale-while-revalidate** — `useStaleLiveQuery` keeps last data visible during refresh
+- **Streaming reports** — `foldPostedJournalLines()` iterates journal index instead of loading all rows
+- **Code splitting** — lazy routes with retry; vendor chunks for react, dexie, supabase, charts
+
+---
+
+## PWA
+
+- Installable (Android primary target); `registerType: 'prompt'` with update banner
+- Works offline after first load; service worker precaches static assets
+- `navigator.storage.persist()` requested on boot to reduce eviction risk
+- Theme: dark/light toggle; brand `#0b0d10` shell
+
+---
+
+## Project layout
 
 ```
 src/
-  lib/           money, db (Dexie), accounting, transactions, reports, sync, validators
-  hooks/         live queries, sync, settings, overlay back/swipe, financials
-  store/         Zustand (app, sync, toast, theme, period)
-  components/    layout (AppShell, Sidebar, BottomNav), common UI, charts, forms
-  pages/         dashboard, sales, purchases, expenses, inventory, customers,
-                 vendors, banking, ledger, reports, growth, more, settings, payments
-supabase/        cloud schema migrations + RLS — see supabase/README.md
-scripts/         icons, migrations, cloud inspection — see scripts/README.md
-.github/         weekly Supabase DB backup workflow
+  lib/           db, money, accounting, transactions, sync, reports, backup, validators
+  hooks/         live queries, sync, settings, financials, overlay navigation
+  store/         Zustand stores
+  components/    layout, common UI, charts, forms
+  pages/         route screens (lazy-loaded from App.tsx)
+supabase/        cloud schema + RLS migrations
+scripts/         dev helpers (icons, cloud inspect) — see scripts/README.md
+.github/         weekly Supabase pg_dump workflow (optional secret)
 ```
 
-## Routes (SPA)
+Entry: `main.tsx` → seed → migrations → sync engine → backup scheduler → React app.
 
-| Path | Page |
-|---|---|
+---
+
+## Routes
+
+| Path | Screen |
+|------|--------|
 | `/` | Dashboard |
 | `/sales`, `/sales/new`, `/sales/:id` | Sales |
 | `/purchases`, `/purchases/new`, `/purchases/:id` | Purchases |
@@ -94,49 +205,68 @@ scripts/         icons, migrations, cloud inspection — see scripts/README.md
 | `/inventory`, `/inventory/categories`, `/inventory/:id` | Inventory |
 | `/customers`, `/customers/:id`, `/customers/:id/statement` | Customers |
 | `/vendors`, `/vendors/:id`, `/vendors/:id/statement` | Vendors |
-| `/banking`, `/banking/:id`, `/banking/transfer`, `/banking/manual-entry` | Banking |
+| `/banking`, `/banking/:id`, `/banking/transfer`, `/banking/manual-entry`, `/banking/:bankId/transactions/:txnId` | Banking |
 | `/payments`, `/payments/payable` | Outstanding receivables / payables |
 | `/ledger`, `/ledger/trial-balance`, `/ledger/accounts` | Ledger |
 | `/reports` + `/reports/pnl`, `balance-sheet`, `cashflow`, etc. | Reports |
 | `/growth` | Growth analytics |
-| `/more` + fixed-asset, loan, credit-card, owner-capital | More |
-| `/settings` | Settings & sync |
+| `/more` + fixed-asset, loan, credit-card, owner-capital | Adjustments |
+| `/settings` | Settings, sync, backup |
+
+Bottom nav: Dashboard · Sales · Banking · Reports · Settings (More via sidebar).
+
+---
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Dev server with HMR |
+| `npm run build` | Type-check + production PWA → `dist/` |
+| `npm run preview` | Serve production build locally |
+| `npm run typecheck` | `tsc -b --noEmit` |
+| `npm run gen:icons` | Regenerate PWA icons |
+
+---
 
 ## Verification (pre-release)
 
 ```bash
 npm run typecheck   # must pass
-npm run build       # must pass — also validates PWA manifest + service worker
+npm run build       # must pass
 ```
 
-Manual smoke test on a 390px viewport (or Android PWA):
+**Smoke test** (390px viewport or installed PWA):
 
-- [ ] Offline mode: DevTools → Network → Offline — create a sale, verify it persists after reload
-- [ ] Sidebar opens and navigates (e.g. Expenses) without closing prematurely
-- [ ] Full-screen forms: back arrow, swipe-back, Android hardware back
-- [ ] Money displays as ₹ with right-aligned tabular figures in lists
-- [ ] Sync panel (Settings) shows pending count and last sync when online
+- [ ] Offline: create a sale → reload → data persists
+- [ ] Void a sale → stock restored, journal voided, reports update
+- [ ] Settings → Export backup → restore on fresh tab (checksum OK)
+- [ ] Sign in → Sync Now → pending count clears
+- [ ] Banking transfer posts GL entry + both bank txns
+
+---
 
 ## Deployment (Vercel)
 
-1. Import the GitHub repo into [Vercel](https://vercel.com).
-2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (optional — app works without them).
-3. Deploy. `vercel.json` handles SPA rewrites and `no-cache` for `sw.js`.
+1. Import repo → set `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (optional).
+2. Deploy. [`vercel.json`](vercel.json) handles SPA rewrites, security headers, and `no-cache` for `sw.js`.
+3. Push to `main` triggers production when linked.
 
-Push to `main` triggers production deploy when the repo is linked.
+Ping Supabase REST every ~72 h (e.g. [cron-job.org](https://cron-job.org)) to keep free-tier projects awake.
 
-To keep a free Supabase project awake, ping its REST endpoint every ~72h (e.g. [cron-job.org](https://cron-job.org)).
+---
 
 ## Version history
 
 | Version | Highlights |
-|---|---|
-| **2.1.0** | Release polish, docs, sidebar/nav fix, cleanup |
-| 2.0.5 | Sidebar navigation fix (no `history.back` on route change) |
-| 2.0.4 | Custom expense categories; sidebar fix attempt |
-| 2.0.3 | More: loans, credit cards, owner capital |
-| 2.0.2 | Full-screen mobile forms, swipe/back everywhere |
-| 2.0.1 | Sync loop fix; dashboard sync badge removed |
+|---------|------------|
+| **3.0.0** | Major release: security hardening, scheduled backup + checksums, performance (virtual lists, dashboard cache), purchase discounts, bug-fix sweep, 10 s sync, full docs |
+| 2.1.15 | Scheduled JSON backup, rolling snapshots, Dexie v5 |
+| 2.1.12 | Bank transfer GL, recurring dedup, sync delete coalesce, balance fixes |
+| 2.1.11 | Virtual lists, dashboard cache, incremental sync watermarks |
+| 2.1.0 | Branded PWA icons, bank txn detail, migration hardening |
+
+---
 
 ## License
 

@@ -12,7 +12,8 @@ export type RecurringExpenseInput = Omit<
 /** Build YYYY-MM expense date for a recurring template in a given month key. */
 function expenseDateForMonth(dayOfMonth: number, monthKey: string): string {
   const [y, m] = monthKey.split('-').map(Number);
-  const day = Math.min(dayOfMonth, 28);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const day = Math.min(Math.max(dayOfMonth, 1), daysInMonth);
   return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 

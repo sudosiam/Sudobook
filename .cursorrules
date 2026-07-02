@@ -505,7 +505,7 @@ The `processSyncQueue()` function in `src/lib/sync.ts` is the ONLY place
 that talks to Supabase for writes. It runs:
 - On app load (if online)
 - When `navigator.onLine` fires 'online' event
-- Every 30 seconds via setInterval (if online)
+- Every 10 seconds via setInterval (if online)
 - When user manually taps "Sync Now"
 
 ```typescript

@@ -17,6 +17,7 @@ import { db } from '@/lib/db';
 import { CASH_DRAWER_ID } from '@/lib/coa';
 import { updateBankAccount } from '@/lib/entities';
 import { getBankBalance, getBankTransactionsWithBalance } from '@/lib/reports';
+import { maskAccountNumber } from '@/lib/sanitize';
 import { subtractMoney, toPaise } from '@/lib/money';
 import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
@@ -78,7 +79,7 @@ export default function BankDetail() {
       <PageContainer>
         <div className="mb-3 card">
           <p className="text-xs uppercase tracking-wider text-muted">
-            {bank.bankName} · {bank.accountNumber}
+            {bank.bankName} · {maskAccountNumber(bank.accountNumber)}
           </p>
           <MoneyDisplay amount={balance ?? 0} className="mt-1 block hero-money" />
           <p className="mt-1 text-xs text-disabled">Book balance</p>
