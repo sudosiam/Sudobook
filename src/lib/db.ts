@@ -352,6 +352,21 @@ class SudoBooksDB extends Dexie {
   constructor() {
     super('SudoBooksDB', { addons: [dexieCloud] });
 
+    // Dexie Cloud MUST be configured before the database opens (i.e. before any
+    // db.table operation). Doing it here — before version() calls — guarantees
+    // correct ordering regardless of what main.tsx does first.
+    const cloudUrl = (import.meta.env.VITE_DEXIE_CLOUD_URL as string | undefined)?.trim();
+    if (cloudUrl) {
+      this.cloud.configure({
+        databaseUrl: cloudUrl,
+        requireAuth: false,
+        nameSuffix: false,
+        socialAuth: false,
+        // These tables live on-device only — never uploaded to the cloud.
+        unsyncedTables: ['settings', 'dashboardCache', 'backupSnapshots', 'backupFolder'],
+      });
+    }
+
     // Schema versioning only — bump when stores/indexes change.
     // One-time data backfills run via `runMigrations()` in lib/migrations/runner.ts
     // (tracked in settings.migrations), not Dexie `.upgrade()` hooks.

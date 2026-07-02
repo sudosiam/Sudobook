@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { db } from '@/lib/db';
 import { isDexieCloudConfigured, isCloudLoggedIn } from '@/lib/cloud';
-import { pendingSyncCount } from '@/lib/sync';
+import { pendingSyncCount, syncNow } from '@/lib/sync';
 import { seedDatabase } from '@/lib/seed';
 import { toast } from '@/store/useToast';
 import { useAppStore } from '@/store/useAppStore';
@@ -35,7 +35,20 @@ export function useAuth() {
   const login = async (email?: string) => {
     if (!isDexieCloudConfigured) throw new Error('Cloud sync not configured');
     await db.cloud.login(email ? { email, grant_type: 'otp' } : undefined);
-    toast.success('Signed in — cloud backup active');
+
+    // Verify the user actually completed the OTP flow.
+    // If the popup was closed or blocked without verifying, isLoggedIn stays false.
+    if (!isCloudLoggedIn()) {
+      throw new Error('Sign-in was not completed — please try again');
+    }
+
+    toast.success('Signed in — pulling your cloud data…');
+
+    // Pull immediately so data from other devices appears without waiting
+    // for the next automatic sync cycle.
+    void syncNow().catch((err) => {
+      console.warn('[login] initial sync failed:', err);
+    });
   };
 
   const signOut = async () => {

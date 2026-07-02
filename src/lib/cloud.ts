@@ -25,20 +25,13 @@ export const CLOUD_SYNCED_STORES = [
 /** Tables that stay on-device only — never uploaded to Dexie Cloud. */
 export const LOCAL_ONLY_STORES = ['settings', 'dashboardCache', 'backupSnapshots', 'backupFolder'] as const;
 
-let configured = false;
-
-/** Wire Dexie Cloud once at app boot. Safe to call multiple times. */
+/**
+ * No-op — Dexie Cloud is now configured in the SudoBooksDB constructor so it
+ * runs before the database opens. This function is kept for call-site
+ * compatibility only.
+ */
 export function configureDexieCloud(): void {
-  if (!isDexieCloudConfigured || configured) return;
-  configured = true;
-
-  db.cloud.configure({
-    databaseUrl: databaseUrl!.trim(),
-    requireAuth: false,
-    nameSuffix: false,
-    socialAuth: false,
-    unsyncedTables: [...LOCAL_ONLY_STORES],
-  });
+  // intentional no-op — configuration happens in db.ts constructor
 }
 
 /** Whether the current Dexie Cloud session is authenticated. */
