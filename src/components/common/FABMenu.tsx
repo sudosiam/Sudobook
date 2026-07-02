@@ -38,14 +38,14 @@ export function FABMenu({ items }: { items: FABMenuItem[] }) {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
 
-  const { close: dismissMenu } = useOverlayBack(open, isMobile, () => setOpen(false), {
+  const { close: dismissMenu, closeSilently } = useOverlayBack(open, isMobile, () => setOpen(false), {
     swipe: 'none',
   });
 
   const handleSelect = (item: FABMenuItem) => {
     haptics.tap();
-    dismissMenu();
     navigate(item.to, item.state ? { state: item.state } : undefined);
+    closeSilently();
   };
 
   const handleToggle = () => {

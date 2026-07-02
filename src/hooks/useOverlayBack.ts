@@ -3,6 +3,7 @@ import {
   dismissOverlayHistory,
   isTopOverlay,
   registerOverlayHistory,
+  unregisterOverlay,
 } from '@/lib/overlayHistory';
 import { useSwipeBack } from '@/hooks/useSwipeBack';
 
@@ -52,6 +53,16 @@ export function useOverlayBack(
     };
   }, [open, enabled, useHistory]);
 
+  const closeSilently = useCallback(() => {
+    const handler = historyHandlerRef.current;
+    if (handler) {
+      unregisterOverlay(handler);
+      historyHandlerRef.current = null;
+    }
+    closedViaPopRef.current = true;
+    onCloseRef.current();
+  }, []);
+
   const close = useCallback(() => {
     const handler = historyHandlerRef.current;
     if (enabled && useHistory && handler && !closedViaPopRef.current) {
@@ -67,5 +78,5 @@ export function useOverlayBack(
     swipeMode === 'panel-left' ? 'panel-left' : 'edge-right',
   );
 
-  return { close, touchHandlers };
+  return { close, closeSilently, touchHandlers };
 }

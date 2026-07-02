@@ -26,6 +26,12 @@ export function registerOverlayHistory(onClose: () => void): () => void {
   };
 }
 
+/** Remove overlay from stack without popping browser history. */
+export function unregisterOverlay(onClose: () => void): void {
+  const idx = stack.lastIndexOf(onClose);
+  if (idx >= 0) stack.splice(idx, 1);
+}
+
 export function isTopOverlay(onClose: () => void): boolean {
   return stack[stack.length - 1] === onClose;
 }
