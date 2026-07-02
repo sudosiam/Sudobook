@@ -45,7 +45,7 @@ export function useSync() {
   }, []);
 
   const phase = isDexieCloudConfigured ? db.cloud.syncState.value.phase : 'in-sync';
-  const pendingCount = phase === 'not-in-sync' || phase === 'pushing' ? 1 : 0;
+  const pendingCount = phase === 'not-in-sync' || phase === 'pushing' || phase === 'pulling' ? 1 : 0;
   const failedCount = isDexieCloudConfigured && phase === 'error' ? 1 : 0;
 
   return {

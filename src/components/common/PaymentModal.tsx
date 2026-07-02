@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { format } from 'date-fns';
@@ -27,7 +27,15 @@ export function PaymentModal({
   onSubmit,
   submitLabel = 'Confirm Payment',
 }: PaymentModalProps) {
-  const schema = paymentAgainstDueSchema(maxDue);
+  // Keep maxDue in a ref so the resolver always reads the latest value without
+  // needing useForm to re-initialize (which would discard the user's input).
+  const maxDueRef = useRef(maxDue);
+  maxDueRef.current = maxDue;
+
+  const resolver = useCallback<ReturnType<typeof zodResolver>>(
+    (...args) => zodResolver(paymentAgainstDueSchema(maxDueRef.current))(...args),
+    [],
+  );
 
   const {
     register,
@@ -38,7 +46,7 @@ export function PaymentModal({
     reset,
     formState: { errors, isSubmitting },
   } = useForm<PaymentFormData>({
-    resolver: zodResolver(schema),
+    resolver,
     defaultValues: {
       date: format(new Date(), 'yyyy-MM-dd'),
       amount: maxDue,

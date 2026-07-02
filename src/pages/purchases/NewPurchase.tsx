@@ -81,6 +81,13 @@ export default function NewPurchase() {
     }
   }, [discount, subtotal, setValue]);
 
+  const paidAmount = watch('paidAmount');
+  useEffect(() => {
+    if (paymentMethod === 'partial' && (paidAmount ?? 0) > total && total > 0) {
+      setValue('paidAmount', total, { shouldValidate: true });
+    }
+  }, [paidAmount, total, paymentMethod, setValue]);
+
   const addItem = () => {
     const p = productList[0];
     append({
@@ -286,7 +293,7 @@ export default function NewPurchase() {
             <Textarea {...register('notes')} placeholder="Optional" />
           </Field>
 
-          <Button type="submit" disabled={isSubmitting || subtotal <= 0} className="w-full">
+          <Button type="submit" disabled={isSubmitting || total <= 0} className="w-full">
             Record Purchase
           </Button>
         </form>

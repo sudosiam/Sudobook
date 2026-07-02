@@ -119,7 +119,11 @@ export async function restoreBackup(backup: BackupFile): Promise<void> {
       lastSyncAt: undefined,
       lastPullAt: undefined,
       lastPullAtByTable: undefined,
+      dashboardRevision: 0,
     });
+
+    // Wipe stale cached metrics so the dashboard recomputes from restored data.
+    await db.dashboardCache.clear();
   });
 
   if (isCloudLoggedIn()) {

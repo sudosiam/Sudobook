@@ -567,6 +567,9 @@ export async function getCustomerAging(asOf?: string): Promise<AgingReport> {
   for (const c of customers) {
     const buckets = emptyBuckets();
 
+    // Opening balance is prior-period debt — bucket as oldest (90+).
+    if (c.openingBalance > 0) buckets['90+'] += c.openingBalance;
+
     const sales = await db.sales.where('customerId').equals(c.id).toArray();
     for (const s of sales) {
       if (s.status === 'void' || s.dueAmount <= 0) continue;
@@ -588,6 +591,9 @@ export async function getVendorAging(asOf?: string): Promise<AgingReport> {
 
   for (const v of vendors) {
     const buckets = emptyBuckets();
+
+    // Opening balance is prior-period payable — bucket as oldest (90+).
+    if (v.openingBalance > 0) buckets['90+'] += v.openingBalance;
 
     const purchases = await db.purchases.where('vendorId').equals(v.id).toArray();
     for (const p of purchases) {

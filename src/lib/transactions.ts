@@ -322,6 +322,7 @@ export async function recordSale(input: RecordSaleInput): Promise<string> {
 }
 
 export async function voidSale(saleId: string, reason: string): Promise<void> {
+  assertDbWritable();
   const sale = await db.sales.get(saleId);
   if (!sale) throw new Error('Sale not found');
   if (sale.status === 'void') throw new Error('Sale already voided');
@@ -336,15 +337,17 @@ export async function voidSale(saleId: string, reason: string): Promise<void> {
       // re-blending WAC here corrupts cost when stock was replenished after the sale.
       for (const item of sale.items) {
         const product = await db.products.get(item.productId);
-        if (product) {
-          const balanceAfter = await recordStockMovement(product.id, 'adjustment', item.qty, {
-            date: now().slice(0, 10),
-            reference: `VOID-${sale.saleNumber}`,
-            linkedId: saleId,
-            note: 'Sale voided — stock restored',
-          });
-          await updateProductStock(product.id, { stockQty: balanceAfter });
+        if (!product) {
+          console.warn(`[voidSale] product ${item.productId} (${item.productName}) not found — stock not restored, GL already reversed`);
+          continue;
         }
+        const balanceAfter = await recordStockMovement(product.id, 'adjustment', item.qty, {
+          date: now().slice(0, 10),
+          reference: `VOID-${sale.saleNumber}`,
+          linkedId: saleId,
+          note: 'Sale voided — stock restored',
+        });
+        await updateProductStock(product.id, { stockQty: balanceAfter });
       }
 
       // Reverse every bank movement (initial receipt + later payments).
@@ -433,6 +436,7 @@ export interface RecordPurchaseInput {
 }
 
 export async function recordPurchase(input: RecordPurchaseInput): Promise<string> {
+  assertDbWritable();
   assertIsoDate(input.date);
   if (input.items.length === 0) throw new Error('At least one item required');
   const subtotal = addMoney(...input.items.map((i) => i.total));
@@ -608,6 +612,7 @@ export async function payPurchase(
 }
 
 export async function voidPurchase(purchaseId: string, reason: string): Promise<void> {
+  assertDbWritable();
   const purchase = await db.purchases.get(purchaseId);
   if (!purchase) throw new Error('Purchase not found');
   if (purchase.status === 'void') throw new Error('Purchase already voided');
@@ -620,7 +625,10 @@ export async function voidPurchase(purchaseId: string, reason: string): Promise<
 
       for (const item of purchase.items) {
         const product = await db.products.get(item.productId);
-        if (!product) continue;
+        if (!product) {
+          console.warn(`[voidPurchase] product ${item.productId} (${item.productName}) not found — stock not removed, GL already reversed`);
+          continue;
+        }
         if (product.stockQty < item.qty) {
           throw new Error(
             `Cannot void purchase: insufficient stock for ${product.name} (have ${product.stockQty}, need ${item.qty})`,
@@ -670,6 +678,7 @@ export interface RecordExpenseInput {
 }
 
 export async function recordExpense(input: RecordExpenseInput): Promise<string> {
+  assertDbWritable();
   assertIsoDate(input.date);
   assertPositivePaise(input.amount);
   assertExpenseAccountCode(input.accountCode);
@@ -1656,7 +1665,9 @@ export async function adjustStock(input: {
 // ─── HELPERS ──────────────────────────────────────────────────
 
 async function defaultCashBankId(): Promise<string> {
-  const settings = await db.settings.get('singleton');
-  if (!settings) throw new Error('Settings not initialised');
-  return settings.defaultBankId;
+  // Always return the deterministic cash drawer ID so that unspecified-bank
+  // cash transactions post to Cash-in-Hand (101) rather than whatever the user
+  // has set as their default bank, which may point to a real bank account.
+  const { CASH_DRAWER_ID } = await import('@/lib/coa');
+  return CASH_DRAWER_ID;
 }

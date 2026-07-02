@@ -256,15 +256,17 @@ export default function Settings() {
                     {formatStorageBytes(storageInfo.usedBytes)} of{' '}
                     {formatStorageBytes(storageInfo.quotaBytes)} used
                   </p>
-                  <div className="h-2 overflow-hidden rounded-full bg-app">
-                    <div
-                      className="h-full rounded-full bg-brand transition-all"
-                      style={{
-                        width: `${Math.min(100, (storageInfo.usedBytes / storageInfo.quotaBytes) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                  {storageInfo.usedBytes / storageInfo.quotaBytes > 0.8 && (
+                  {storageInfo.quotaBytes > 0 && (
+                    <div className="h-2 overflow-hidden rounded-full bg-app">
+                      <div
+                        className="h-full rounded-full bg-brand transition-all"
+                        style={{
+                          width: `${Math.min(100, (storageInfo.usedBytes / storageInfo.quotaBytes) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  )}
+                  {storageInfo.quotaBytes > 0 && storageInfo.usedBytes / storageInfo.quotaBytes > 0.8 && (
                     <p className="text-xs text-warning">
                       Storage nearly full — enable automatic backup and export old data if needed.
                     </p>

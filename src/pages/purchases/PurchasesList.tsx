@@ -24,7 +24,7 @@ export default function PurchasesList() {
   const purchases = useLiveQuery(
     () =>
       range
-        ? db.purchases.where('date').between(range.start, range.end, true, true).reverse().toArray()
+        ? db.purchases.where('date').between(range.start, range.end, true, true).reverse().limit(limit).toArray()
         : db.purchases.orderBy('date').reverse().limit(limit).toArray(),
     [range?.start, range?.end, limit],
   );

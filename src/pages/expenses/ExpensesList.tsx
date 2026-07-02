@@ -44,7 +44,7 @@ export default function ExpensesList() {
   const expenses = useLiveQuery(
     () =>
       range
-        ? db.expenses.where('date').between(range.start, range.end, true, true).reverse().toArray()
+        ? db.expenses.where('date').between(range.start, range.end, true, true).reverse().limit(limit).toArray()
         : db.expenses.orderBy('date').reverse().limit(limit).toArray(),
     [range?.start, range?.end, limit],
   );

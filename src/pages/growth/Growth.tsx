@@ -26,10 +26,10 @@ export default function Growth() {
 
   const topProducts = useLiveQuery(async () => {
     const sales = await db.sales.filter((s) => s.status !== 'void').toArray();
-    const map = new Map<string, { name: string; revenue: number }>();
+    const map = new Map<string, { productId: string; name: string; revenue: number }>();
     for (const s of sales) {
       for (const it of s.items) {
-        const cur = map.get(it.productId) ?? { name: it.productName, revenue: 0 };
+        const cur = map.get(it.productId) ?? { productId: it.productId, name: it.productName, revenue: 0 };
         cur.revenue += it.total;
         map.set(it.productId, cur);
       }
@@ -113,7 +113,7 @@ export default function Growth() {
             ) : (
               <div className="divide-y divide-border-app">
                 {(topProducts ?? []).map((p, i) => (
-                  <div key={i} className="flex items-center justify-between py-2.5">
+                  <div key={p.productId} className="flex items-center justify-between py-2.5">
                     <span className="text-sm text-foreground">
                       {i + 1}. {p.name}
                     </span>

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Select } from '@/components/common/Field';
 import type { Account } from '@/lib/db';
 
@@ -14,6 +15,17 @@ export function AccountCategorySelect({
   onChange,
   emptyLabel = 'No categories available',
 }: AccountCategorySelectProps) {
+  // When the current value is not in the loaded accounts list (e.g. accounts
+  // just loaded and value is an initialised default not in this filtered set),
+  // snap form state to match the first available option so the displayed item
+  // and the submitted value are always in sync.
+  useEffect(() => {
+    if (!accounts || accounts.length === 0) return;
+    if (!accounts.some((a) => a.code === value)) {
+      onChange(accounts[0].code, accounts[0].name);
+    }
+  }, [accounts, value, onChange]);
+
   if (!accounts) {
     return (
       <Select disabled value="">
