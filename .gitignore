@@ -29,6 +29,10 @@ pnpm-debug.log*
 dev-dist
 *.tsbuildinfo
 
+# Dexie Cloud CLI credentials (never commit)
+dexie-cloud.json
+dexie-cloud.key
+
 # Audit / temp extracts (never commit)
 *_extract.txt
 *_audit*.xml

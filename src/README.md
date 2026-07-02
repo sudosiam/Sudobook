@@ -22,4 +22,4 @@
 
 **Rules:** Read from Dexie in components; post journal entries for all money events; use `MoneyDisplay` / `MoneyInput` for amounts; mobile-first Tailwind only.
 
-See root [README.md](../README.md) (v3) and [.cursorrules](../.cursorrules) for full conventions.
+See root [README.md](../README.md) (v4) and [.cursorrules](../.cursorrules) for full conventions.

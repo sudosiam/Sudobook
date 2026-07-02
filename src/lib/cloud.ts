@@ -23,7 +23,7 @@ export const CLOUD_SYNCED_STORES = [
 ] as const;
 
 /** Tables that stay on-device only — never uploaded to Dexie Cloud. */
-export const LOCAL_ONLY_STORES = ['settings', 'dashboardCache', 'backupSnapshots'] as const;
+export const LOCAL_ONLY_STORES = ['settings', 'dashboardCache', 'backupSnapshots', 'backupFolder'] as const;
 
 let configured = false;
 

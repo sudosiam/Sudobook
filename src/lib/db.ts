@@ -294,7 +294,16 @@ export interface AppSettings {
   autoBackupDownload?: boolean;
   /** Keep rolling snapshots in IndexedDB for quick restore (default true). */
   autoBackupStoreLocal?: boolean;
+  /** Save automatic backups to a user-selected folder (File System Access API). */
+  autoBackupSaveToFolder?: boolean;
   seeded: boolean;
+}
+
+/** Persisted File System Access API directory handle for scheduled backups. */
+export interface BackupFolderRecord {
+  id: 'singleton';
+  folderName: string;
+  handle: FileSystemDirectoryHandle;
 }
 
 /** Rolling on-device backup for quick restore (full JSON payload). */
@@ -327,6 +336,7 @@ class SudoBooksDB extends Dexie {
   stockMovements!: Table<StockMovement, string>;
   settings!: Table<AppSettings, string>;
   backupSnapshots!: Table<BackupSnapshot, string>;
+  backupFolder!: Table<BackupFolderRecord, string>;
   dashboardCache!: Table<
     {
       id: string;
@@ -454,6 +464,27 @@ class SudoBooksDB extends Dexie {
       settings: 'id',
       dashboardCache: 'id, updatedAt',
       backupSnapshots: 'id, createdAt',
+    });
+
+    // v7 — optional File System Access API backup folder handle (local only).
+    this.version(7).stores({
+      accounts: 'id, code, type, parentCode, isActive',
+      journalEntries: 'id, date, entryType, status, linkedId',
+      customers: 'id, name, phone, isActive',
+      vendors: 'id, name, phone, isActive',
+      products: 'id, sku, category, isActive',
+      productCategories: 'id, name, isActive',
+      sales: 'id, saleNumber, date, customerId, status',
+      purchases: 'id, purchaseNumber, date, vendorId, status',
+      expenses: 'id, expenseNumber, date, accountCode',
+      recurringExpenses: 'id, isActive, dayOfMonth',
+      bankAccounts: 'id, name, accountId, isActive',
+      bankTransactions: 'id, bankAccountId, date, type, linkedId',
+      stockMovements: 'id, productId, date, type, linkedId',
+      settings: 'id',
+      dashboardCache: 'id, updatedAt',
+      backupSnapshots: 'id, createdAt',
+      backupFolder: 'id',
     });
   }
 }
