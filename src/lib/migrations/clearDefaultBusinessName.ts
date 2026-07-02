@@ -6,7 +6,9 @@ const LEGACY_DEFAULT = 'Biswajit Power Hub';
 
 /** Clears the old seeded default business name from existing installs. */
 export async function clearDefaultBusinessName(): Promise<void> {
-  const settings = await db.settings.get('singleton');
-  if (!settings || settings.businessName !== LEGACY_DEFAULT) return;
-  await db.settings.update('singleton', { businessName: '' });
+  await db.transaction('rw', db.settings, async () => {
+    const settings = await db.settings.get('singleton');
+    if (!settings || settings.businessName !== LEGACY_DEFAULT) return;
+    await db.settings.update('singleton', { businessName: '' });
+  });
 }

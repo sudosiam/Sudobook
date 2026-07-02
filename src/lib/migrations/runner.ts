@@ -14,11 +14,11 @@ function makeDeviceId(): string {
 
 async function markMigrationDone(id: string): Promise<void> {
   const settings = await db.settings.get('singleton');
-  if (!settings) return;
-  const done = new Set(settings.migrations ?? []);
-  if (done.has(id)) return;
-  done.add(id);
-  await db.settings.update('singleton', { migrations: [...done] });
+  if (!settings) throw new Error('[runMigrations] Settings missing — cannot record migration');
+  const recorded = new Set(settings.migrations ?? []);
+  if (recorded.has(id)) return;
+  recorded.add(id);
+  await db.settings.update('singleton', { migrations: [...recorded] });
 }
 
 /**
@@ -39,8 +39,14 @@ export async function runMigrations(): Promise<void> {
 
   for (const migration of DATA_MIGRATIONS) {
     if (done.has(migration.id)) continue;
-    await migration.run();
-    await markMigrationDone(migration.id);
+    try {
+      await migration.run();
+      await markMigrationDone(migration.id);
+      done.add(migration.id);
+    } catch (err) {
+      console.error(`[runMigrations] ${migration.id}`, err);
+      throw err;
+    }
   }
 
   await syncMissingDefaultAccounts();
