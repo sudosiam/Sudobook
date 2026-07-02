@@ -331,7 +331,7 @@ export async function voidSale(saleId: string, reason: string): Promise<void> {
 
   await db.transaction(
     'rw',
-    [db.sales, db.products, db.stockMovements, db.bankAccounts, db.bankTransactions, db.journalEntries],
+    [db.sales, db.products, db.stockMovements, db.bankAccounts, db.bankTransactions, db.journalEntries, db.settings],
     async () => {
       await voidLinkedJournalEntries(saleId, [sale.journalEntryId, sale.cogsEntryId], reason);
 
@@ -378,7 +378,7 @@ export async function receiveSalePayment(
 
   await db.transaction(
     'rw',
-    [db.sales, db.bankTransactions, db.journalEntries],
+    [db.sales, db.bankTransactions, db.journalEntries, db.settings],
     async () => {
       // Re-read inside the transaction to avoid double-payment races.
       const sale = await db.sales.get(saleId);
@@ -569,7 +569,7 @@ export async function payPurchase(
 
   await db.transaction(
     'rw',
-    [db.purchases, db.bankTransactions, db.journalEntries],
+    [db.purchases, db.bankTransactions, db.journalEntries, db.settings],
     async () => {
       const purchase = await db.purchases.get(purchaseId);
       if (!purchase) throw new Error('Purchase not found');
@@ -621,7 +621,7 @@ export async function voidPurchase(purchaseId: string, reason: string): Promise<
 
   await db.transaction(
     'rw',
-    [db.purchases, db.products, db.stockMovements, db.bankAccounts, db.bankTransactions, db.journalEntries],
+    [db.purchases, db.products, db.stockMovements, db.bankAccounts, db.bankTransactions, db.journalEntries, db.settings],
     async () => {
       await voidLinkedJournalEntries(purchaseId, [purchase.journalEntryId], reason);
 
@@ -764,7 +764,7 @@ export async function voidExpense(expenseId: string, reason: string): Promise<vo
 
   await db.transaction(
     'rw',
-    [db.expenses, db.bankAccounts, db.bankTransactions, db.journalEntries],
+    [db.expenses, db.bankAccounts, db.bankTransactions, db.journalEntries, db.settings],
     async () => {
       await voidLinkedJournalEntries(expenseId, [expense.journalEntryId], reason);
       await reverseBankTxnsFor(expenseId);
@@ -799,7 +799,7 @@ export async function transferBetweenBanks(input: {
 
   await db.transaction(
     'rw',
-    [db.bankTransactions, db.journalEntries],
+    [db.bankTransactions, db.journalEntries, db.settings],
     async () => {
       // Always post a balanced journal entry (even when both banks share COA 102 — nets to zero).
       const journalEntryId = await postJournalEntryTx({
@@ -831,7 +831,7 @@ export async function transferBetweenBanks(input: {
   );
 }
 
-const ADJUSTMENT_STORES = [db.bankTransactions, db.journalEntries] as const;
+const ADJUSTMENT_STORES = [db.bankTransactions, db.journalEntries, db.settings] as const;
 
 type AdjustmentPaymentInput = {
   date: string;
