@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { pendingSyncCount, runSync } from '@/lib/sync';
+import { pendingSyncCount, runSync, clearSyncAuthCache } from '@/lib/sync';
 import { toast } from '@/store/useToast';
 import { useAppStore } from '@/store/useAppStore';
 
@@ -27,7 +27,11 @@ export function useAuth() {
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user.id ?? null, session?.user.email ?? null);
-      if (session) void runSync();
+      if (session) {
+        void runSync();
+      } else {
+        clearSyncAuthCache();
+      }
     });
 
     return () => {
@@ -71,6 +75,7 @@ export function useAuth() {
       );
     }
     await supabase.auth.signOut();
+    clearSyncAuthCache();
   };
 
   return { isSupabaseConfigured, activeUserId, userEmail, signIn, signUp, signOut };

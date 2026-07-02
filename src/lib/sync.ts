@@ -13,6 +13,7 @@ import { postDueRecurringExpenses } from '@/lib/recurring';
 import {
   classifySyncError,
   isInvalidUuidSyncError,
+  isRateLimitError,
   syncErrorMessage,
 } from '@/lib/syncErrors';
 import { isValidSyncRecordId } from '@/lib/syncIds';
@@ -24,6 +25,14 @@ const SYNC_BATCH_SIZE = 100;
 const PULL_PAGE_SIZE = 500;
 /** Background sync interval while the app is open and online. */
 const SYNC_INTERVAL_MS = 10_000;
+/** Minimum gap between automatic sync cycles (focus/interval/visibility). */
+const MIN_AUTO_SYNC_GAP_MS = 15_000;
+/** Refresh JWT at most this often — avoids Supabase Auth rate limits. */
+const AUTH_REFRESH_MIN_MS = 5 * 60 * 1000;
+/** Back off auth API calls after a rate-limit response. */
+const AUTH_RATE_LIMIT_BACKOFF_MS = 90_000;
+/** Refresh JWT when it expires within this window. */
+const AUTH_EXPIRY_BUFFER_MS = 120_000;
 /** Warn once when the outbound sync backlog may threaten IndexedDB quota. */
 const SYNC_QUEUE_WARN_SIZE = 500;
 /** Drop unrecoverable failed queue rows after this many days (local data kept). */
@@ -83,27 +92,77 @@ function validatePulledRecord(rowId: string, data: unknown): boolean {
 }
 
 let authFailureNotified = false;
+let authRateLimitWarned = false;
+let cachedSyncUserId: string | null = null;
+let cachedSessionExpiresAtMs = 0;
+let lastAuthRefreshAt = 0;
+let authRateLimitedUntil = 0;
+let lastAutoSyncAt = 0;
 
-/** Refresh session and resolve user id; notify when sync is blocked by auth. */
-async function resolveSyncUserId(): Promise<string | null> {
+/** Clear cached auth after sign-out so the next sync does not reuse a stale user id. */
+export function clearSyncAuthCache(): void {
+  cachedSyncUserId = null;
+  cachedSessionExpiresAtMs = 0;
+  lastAuthRefreshAt = 0;
+  authRateLimitedUntil = 0;
+  authRateLimitWarned = false;
+}
+
+/**
+ * Resolve the signed-in user id for sync.
+ * Uses the local session by default; refreshSession only when the JWT is near expiry
+ * or stale — never on every 10s sync tick (that triggers Supabase Auth rate limits).
+ */
+async function resolveSyncUserId(options?: { forceRefresh?: boolean }): Promise<string | null> {
   if (!supabase) return null;
 
+  const now = Date.now();
+
+  if (now < authRateLimitedUntil && cachedSyncUserId && cachedSessionExpiresAtMs > now) {
+    return cachedSyncUserId;
+  }
+
   const { data: sessionData } = await supabase.auth.getSession();
-  if (!sessionData.session) {
+  const session = sessionData.session;
+  if (!session) {
+    cachedSyncUserId = null;
     return null;
   }
 
-  const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-  if (refreshErr && refreshErr.name !== 'AuthSessionMissingError') {
-    console.warn('[resolveSyncUserId] refreshSession', refreshErr);
-  }
-  if (refreshed.session) {
-    authFailureNotified = false;
-    return refreshed.session.user.id;
+  const expiresAtMs = (session.expires_at ?? 0) * 1000;
+  const sessionValid = expiresAtMs === 0 || expiresAtMs > now;
+  const expiresSoon = expiresAtMs > 0 && expiresAtMs < now + AUTH_EXPIRY_BUFFER_MS;
+  const refreshStale = now - lastAuthRefreshAt > AUTH_REFRESH_MIN_MS;
+  const shouldRefresh =
+    options?.forceRefresh === true ||
+    (sessionValid && expiresSoon) ||
+    (sessionValid && refreshStale && now >= authRateLimitedUntil);
+
+  if (shouldRefresh) {
+    lastAuthRefreshAt = now;
+    const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+    if (refreshErr) {
+      if (isRateLimitError(refreshErr)) {
+        authRateLimitedUntil = now + AUTH_RATE_LIMIT_BACKOFF_MS;
+        if (!authRateLimitWarned) {
+          authRateLimitWarned = true;
+          console.warn('[resolveSyncUserId] auth rate limited — using existing session until it expires');
+        }
+      } else if (refreshErr.name !== 'AuthSessionMissingError') {
+        console.warn('[resolveSyncUserId] refreshSession', refreshErr);
+      }
+    } else if (refreshed.session) {
+      authRateLimitedUntil = 0;
+      authRateLimitWarned = false;
+      authFailureNotified = false;
+      cachedSyncUserId = refreshed.session.user.id;
+      cachedSessionExpiresAtMs = (refreshed.session.expires_at ?? 0) * 1000;
+      return cachedSyncUserId;
+    }
   }
 
-  const { data: auth, error } = await supabase.auth.getUser();
-  if (error || !auth.user) {
+  if (!sessionValid) {
+    cachedSyncUserId = null;
     const blocked = await db.syncQueue.where('status').anyOf('pending', 'failed').count();
     if (blocked > 0 && !authFailureNotified) {
       authFailureNotified = true;
@@ -112,8 +171,11 @@ async function resolveSyncUserId(): Promise<string | null> {
     }
     return null;
   }
+
   authFailureNotified = false;
-  return auth.user.id;
+  cachedSyncUserId = session.user.id;
+  cachedSessionExpiresAtMs = expiresAtMs;
+  return cachedSyncUserId;
 }
 
 /**
@@ -279,15 +341,15 @@ let running = false;
  * Drain the sync queue to Supabase. Safe no-op when Supabase is not
  * configured or the user is offline / unauthenticated.
  */
-export async function processSyncQueue(): Promise<void> {
+export async function processSyncQueue(userId?: string | null): Promise<void> {
   if (running) return;
   if (!isSupabaseConfigured || !supabase) return;
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
   running = true;
   try {
-    const userId = await resolveSyncUserId();
-    if (!userId) return;
+    const uid = userId ?? (await resolveSyncUserId());
+    if (!uid) return;
 
     await coalesceSyncQueue();
     await purgeAbandonedFailedSync();
@@ -322,7 +384,7 @@ export async function processSyncQueue(): Promise<void> {
           } else {
             const payload = {
               id: item.recordId,
-              user_id: userId,
+              user_id: uid,
               data: await freshQueuePayload(item),
             };
             const { error } = await supabase.from(item.table).upsert(payload);
@@ -348,7 +410,7 @@ export async function processSyncQueue(): Promise<void> {
               lastError: message,
             });
             authFailureNotified = false;
-            await resolveSyncUserId();
+            clearSyncAuthCache();
             hadFailure = true;
             break;
           }
@@ -440,15 +502,15 @@ let pulling = false;
  * every pull is incremental (delta only). The server-clock `updated_at`
  * trigger keeps the watermark reliable across devices.
  */
-export async function pullFromSupabase(): Promise<void> {
+export async function pullFromSupabase(userId?: string | null): Promise<void> {
   if (pulling) return;
   if (!isSupabaseConfigured || !supabase) return;
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
   pulling = true;
   try {
-    const userId = await resolveSyncUserId();
-    if (!userId) return;
+    const uid = userId ?? (await resolveSyncUserId());
+    if (!uid) return;
 
     const settings = await db.settings.get('singleton');
     const globalSince = settings?.lastPullAt;
@@ -551,6 +613,9 @@ export async function pullFromSupabase(): Promise<void> {
         lastPullAt: globalWatermark,
         lastPullAtByTable: pullByTable,
       });
+    } else {
+      // Pull completed with no new rows — still record freshness for Settings UI.
+      await db.settings.update('singleton', { lastPullAt: now() });
     }
   } finally {
     pulling = false;
@@ -604,13 +669,14 @@ export async function runSync(options?: { manualRetry?: boolean }): Promise<void
   runSyncInFlight = (async () => {
     do {
       runSyncQueued = false;
+      let userId: string | null = null;
       if (supabase) {
-        const userId = await resolveSyncUserId();
+        userId = await resolveSyncUserId();
         if (userId) await refreshSupabaseSchema();
       }
       await requeueFailedSyncItems(manualRetry);
-      await processSyncQueue();
-      await pullFromSupabase();
+      await processSyncQueue(userId);
+      await pullFromSupabase(userId);
       try {
         await postDueRecurringExpenses();
       } catch (err) {
@@ -633,8 +699,14 @@ let listenersAttached = false;
 let syncSoonTimer: ReturnType<typeof setTimeout> | null = null;
 let engineStarted = false;
 
-function triggerSync(): void {
-  void runSync().catch((err) => {
+function triggerSync(options?: { manual?: boolean }): void {
+  const manual = options?.manual === true;
+  if (!manual) {
+    const now = Date.now();
+    if (now - lastAutoSyncAt < MIN_AUTO_SYNC_GAP_MS) return;
+    lastAutoSyncAt = now;
+  }
+  void runSync(manual ? { manualRetry: true } : undefined).catch((err) => {
     console.error('[runSync]', err);
   });
 }

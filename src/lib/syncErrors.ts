@@ -19,8 +19,13 @@ export function isInvalidUuidSyncError(err: unknown): boolean {
 
 export function isRateLimitError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
-  const e = err as { status?: number; message?: string; code?: string };
-  return e.status === 429 || e.code === '429' || /rate limit/i.test(e.message ?? '');
+  const e = err as { status?: number; message?: string; code?: string; name?: string };
+  return (
+    e.status === 429 ||
+    e.code === '429' ||
+    /rate limit/i.test(e.message ?? '') ||
+    (e.name === 'AuthApiError' && /rate limit/i.test(e.message ?? ''))
+  );
 }
 
 export function isAuthSyncError(err: unknown): boolean {
