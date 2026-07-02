@@ -810,303 +810,342 @@ export async function transferBetweenBanks(input: {
   );
 }
 
-/** Capital expenditure — debits Fixed Assets (105), credits cash/bank. */
-export async function recordFixedAssetPurchase(input: {
+const ADJUSTMENT_STORES = [db.bankTransactions, db.journalEntries, db.syncQueue] as const;
+
+type AdjustmentPaymentInput = {
   date: string;
   description: string;
   amount: number; // paise
   paidFrom: 'cash' | 'bank';
   bankAccountId?: string;
-}): Promise<string> {
+};
+
+/** Void adjustment inside an existing Dexie transaction (no sync). */
+async function voidAdjustmentRecordTx(linkedId: string, reason: string): Promise<void> {
+  await reverseBankTxnsFor(linkedId);
+  await voidLinkedJournalEntries(linkedId, [], reason);
+}
+
+/** Atomically void an adjustment and post its replacement — rolls back if repost fails. */
+async function replaceAdjustmentRecord(
+  linkedId: string,
+  reason: string,
+  repost: (newLinkedId: string) => Promise<void>,
+): Promise<string> {
+  assertDbWritable();
+  if (!linkedId) throw new Error('Missing record id');
+  const newLinkedId = uuid();
+  await db.transaction('rw', [...ADJUSTMENT_STORES], async () => {
+    await voidAdjustmentRecordTx(linkedId, reason);
+    await repost(newLinkedId);
+  });
+  requestSync();
+  return newLinkedId;
+}
+
+async function postFixedAssetPurchaseTx(
+  input: AdjustmentPaymentInput,
+  linkedId: string,
+  map: Map<number, string>,
+  bank: BankAccount,
+): Promise<void> {
+  const reference = `FA-${uuid().slice(0, 8).toUpperCase()}`;
+  const journalEntryId = await postJournalEntryTx({
+    date: input.date,
+    reference,
+    description: `Fixed asset: ${input.description}`,
+    entryType: 'adjustment',
+    linkedId,
+    lines: [
+      line(map, CODES.FIXED_ASSETS, input.amount, 0, input.description),
+      line(map, bankCode(bank), 0, input.amount, 'Paid'),
+    ],
+  });
+  await recordBankTxn(bank, 'debit', input.amount, {
+    date: input.date,
+    description: `Fixed asset: ${input.description}`,
+    category: 'other',
+    reference,
+    linkedId,
+    journalEntryId,
+  });
+}
+
+async function postLoanReceivedTx(
+  input: AdjustmentPaymentInput,
+  linkedId: string,
+  map: Map<number, string>,
+  bank: BankAccount,
+): Promise<void> {
+  const reference = `LN-${uuid().slice(0, 8).toUpperCase()}`;
+  const journalEntryId = await postJournalEntryTx({
+    date: input.date,
+    reference,
+    description: `Loan received: ${input.description}`,
+    entryType: 'adjustment',
+    linkedId,
+    lines: [
+      line(map, bankCode(bank), input.amount, 0, 'Proceeds'),
+      line(map, CODES.LOANS, 0, input.amount, input.description),
+    ],
+  });
+  await recordBankTxn(bank, 'credit', input.amount, {
+    date: input.date,
+    description: `Loan received: ${input.description}`,
+    category: 'other',
+    reference,
+    linkedId,
+    journalEntryId,
+  });
+}
+
+async function postLoanRepaymentTx(
+  input: AdjustmentPaymentInput,
+  linkedId: string,
+  map: Map<number, string>,
+  bank: BankAccount,
+): Promise<void> {
+  const reference = `LN-${uuid().slice(0, 8).toUpperCase()}`;
+  const journalEntryId = await postJournalEntryTx({
+    date: input.date,
+    reference,
+    description: `Loan repayment: ${input.description}`,
+    entryType: 'adjustment',
+    linkedId,
+    lines: [
+      line(map, CODES.LOANS, input.amount, 0, input.description),
+      line(map, bankCode(bank), 0, input.amount, 'Paid'),
+    ],
+  });
+  await recordBankTxn(bank, 'debit', input.amount, {
+    date: input.date,
+    description: `Loan repayment: ${input.description}`,
+    category: 'other',
+    reference,
+    linkedId,
+    journalEntryId,
+  });
+}
+
+async function postOwnerContributionTx(
+  input: AdjustmentPaymentInput,
+  linkedId: string,
+  map: Map<number, string>,
+  bank: BankAccount,
+): Promise<void> {
+  const reference = `EQ-${uuid().slice(0, 8).toUpperCase()}`;
+  const journalEntryId = await postJournalEntryTx({
+    date: input.date,
+    reference,
+    description: `Owner contribution: ${input.description}`,
+    entryType: 'adjustment',
+    linkedId,
+    lines: [
+      line(map, bankCode(bank), input.amount, 0, 'Contribution'),
+      line(map, CODES.CAPITAL, 0, input.amount, input.description),
+    ],
+  });
+  await recordBankTxn(bank, 'credit', input.amount, {
+    date: input.date,
+    description: `Owner contribution: ${input.description}`,
+    category: 'other',
+    reference,
+    linkedId,
+    journalEntryId,
+  });
+}
+
+async function postOwnerDrawTx(
+  input: AdjustmentPaymentInput,
+  linkedId: string,
+  map: Map<number, string>,
+  bank: BankAccount,
+): Promise<void> {
+  const reference = `EQ-${uuid().slice(0, 8).toUpperCase()}`;
+  const journalEntryId = await postJournalEntryTx({
+    date: input.date,
+    reference,
+    description: `Owner draw: ${input.description}`,
+    entryType: 'adjustment',
+    linkedId,
+    lines: [
+      line(map, CODES.CAPITAL, input.amount, 0, input.description),
+      line(map, bankCode(bank), 0, input.amount, 'Withdrawn'),
+    ],
+  });
+  await recordBankTxn(bank, 'debit', input.amount, {
+    date: input.date,
+    description: `Owner draw: ${input.description}`,
+    category: 'other',
+    reference,
+    linkedId,
+    journalEntryId,
+  });
+}
+
+async function postCreditCardPaymentTx(
+  input: AdjustmentPaymentInput,
+  linkedId: string,
+  map: Map<number, string>,
+  bank: BankAccount,
+): Promise<void> {
+  const reference = `CC-${uuid().slice(0, 8).toUpperCase()}`;
+  const journalEntryId = await postJournalEntryTx({
+    date: input.date,
+    reference,
+    description: `Credit card payment: ${input.description}`,
+    entryType: 'adjustment',
+    linkedId,
+    lines: [
+      line(map, CODES.CREDIT_CARDS, input.amount, 0, input.description),
+      line(map, bankCode(bank), 0, input.amount, 'Paid'),
+    ],
+  });
+  await recordBankTxn(bank, 'debit', input.amount, {
+    date: input.date,
+    description: `Credit card payment: ${input.description}`,
+    category: 'other',
+    reference,
+    linkedId,
+    journalEntryId,
+  });
+}
+
+async function postCreditCardChargeTx(
+  input: { date: string; description: string; amount: number; accountCode: number },
+  linkedId: string,
+  map: Map<number, string>,
+): Promise<void> {
+  const reference = `CC-${uuid().slice(0, 8).toUpperCase()}`;
+  await postJournalEntryTx({
+    date: input.date,
+    reference,
+    description: `Credit card: ${input.description}`,
+    entryType: 'expense',
+    linkedId,
+    lines: [
+      line(map, input.accountCode, input.amount, 0, input.description),
+      line(map, CODES.CREDIT_CARDS, 0, input.amount, 'On card'),
+    ],
+  });
+}
+
+/** Capital expenditure — debits Fixed Assets (105), credits cash/bank. */
+export async function recordFixedAssetPurchase(input: AdjustmentPaymentInput): Promise<string> {
   assertIsoDate(input.date);
   assertPositivePaise(input.amount);
 
   const map = await codeToIdMap();
   const linkedId = uuid();
-  const reference = `FA-${uuid().slice(0, 8).toUpperCase()}`;
-
   const bank = await resolveExpensePaymentBank(
     input.paidFrom,
     input.bankAccountId,
     defaultCashBankId,
   );
 
-  await db.transaction(
-    'rw',
-    [db.bankTransactions, db.journalEntries, db.syncQueue],
-    async () => {
-      const journalEntryId = await postJournalEntryTx({
-        date: input.date,
-        reference,
-        description: `Fixed asset: ${input.description}`,
-        entryType: 'adjustment',
-        linkedId,
-        lines: [
-          line(map, CODES.FIXED_ASSETS, input.amount, 0, input.description),
-          line(map, bankCode(bank), 0, input.amount, 'Paid'),
-        ],
-      });
-
-      await recordBankTxn(bank, 'debit', input.amount, {
-        date: input.date,
-        description: `Fixed asset: ${input.description}`,
-        category: 'other',
-        reference,
-        linkedId,
-        journalEntryId,
-      });
-    },
-  );
+  await db.transaction('rw', [...ADJUSTMENT_STORES], async () => {
+    await postFixedAssetPurchaseTx(input, linkedId, map, bank);
+  });
 
   return linkedId;
 }
 
 /** Borrow funds — debits cash/bank, credits Loans (202). */
-export async function recordLoanReceived(input: {
-  date: string;
-  description: string;
-  amount: number; // paise
-  paidFrom: 'cash' | 'bank';
-  bankAccountId?: string;
-}): Promise<string> {
+export async function recordLoanReceived(input: AdjustmentPaymentInput): Promise<string> {
   assertIsoDate(input.date);
   assertPositivePaise(input.amount);
 
   const map = await codeToIdMap();
   const linkedId = uuid();
-  const reference = `LN-${uuid().slice(0, 8).toUpperCase()}`;
   const bank = await resolveExpensePaymentBank(
     input.paidFrom,
     input.bankAccountId,
     defaultCashBankId,
   );
 
-  await db.transaction(
-    'rw',
-    [db.bankTransactions, db.journalEntries, db.syncQueue],
-    async () => {
-      const journalEntryId = await postJournalEntryTx({
-        date: input.date,
-        reference,
-        description: `Loan received: ${input.description}`,
-        entryType: 'adjustment',
-        linkedId,
-        lines: [
-          line(map, bankCode(bank), input.amount, 0, 'Proceeds'),
-          line(map, CODES.LOANS, 0, input.amount, input.description),
-        ],
-      });
-
-      await recordBankTxn(bank, 'credit', input.amount, {
-        date: input.date,
-        description: `Loan received: ${input.description}`,
-        category: 'other',
-        reference,
-        linkedId,
-        journalEntryId,
-      });
-    },
-  );
+  await db.transaction('rw', [...ADJUSTMENT_STORES], async () => {
+    await postLoanReceivedTx(input, linkedId, map, bank);
+  });
 
   return linkedId;
 }
 
 /** Repay loan principal — debits Loans (202), credits cash/bank. */
-export async function recordLoanRepayment(input: {
-  date: string;
-  description: string;
-  amount: number; // paise
-  paidFrom: 'cash' | 'bank';
-  bankAccountId?: string;
-}): Promise<string> {
+export async function recordLoanRepayment(input: AdjustmentPaymentInput): Promise<string> {
   assertIsoDate(input.date);
   assertPositivePaise(input.amount);
 
   const map = await codeToIdMap();
   const linkedId = uuid();
-  const reference = `LN-${uuid().slice(0, 8).toUpperCase()}`;
   const bank = await resolveExpensePaymentBank(
     input.paidFrom,
     input.bankAccountId,
     defaultCashBankId,
   );
 
-  await db.transaction(
-    'rw',
-    [db.bankTransactions, db.journalEntries, db.syncQueue],
-    async () => {
-      const journalEntryId = await postJournalEntryTx({
-        date: input.date,
-        reference,
-        description: `Loan repayment: ${input.description}`,
-        entryType: 'adjustment',
-        linkedId,
-        lines: [
-          line(map, CODES.LOANS, input.amount, 0, input.description),
-          line(map, bankCode(bank), 0, input.amount, 'Paid'),
-        ],
-      });
-
-      await recordBankTxn(bank, 'debit', input.amount, {
-        date: input.date,
-        description: `Loan repayment: ${input.description}`,
-        category: 'other',
-        reference,
-        linkedId,
-        journalEntryId,
-      });
-    },
-  );
+  await db.transaction('rw', [...ADJUSTMENT_STORES], async () => {
+    await postLoanRepaymentTx(input, linkedId, map, bank);
+  });
 
   return linkedId;
 }
 
 /** Owner puts money into the business — debits cash/bank, credits Owner's Capital (301). */
-export async function recordOwnerContribution(input: {
-  date: string;
-  description: string;
-  amount: number; // paise
-  paidFrom: 'cash' | 'bank';
-  bankAccountId?: string;
-}): Promise<string> {
+export async function recordOwnerContribution(input: AdjustmentPaymentInput): Promise<string> {
   assertIsoDate(input.date);
   assertPositivePaise(input.amount);
 
   const map = await codeToIdMap();
   const linkedId = uuid();
-  const reference = `EQ-${uuid().slice(0, 8).toUpperCase()}`;
   const bank = await resolveExpensePaymentBank(
     input.paidFrom,
     input.bankAccountId,
     defaultCashBankId,
   );
 
-  await db.transaction(
-    'rw',
-    [db.bankTransactions, db.journalEntries, db.syncQueue],
-    async () => {
-      const journalEntryId = await postJournalEntryTx({
-        date: input.date,
-        reference,
-        description: `Owner contribution: ${input.description}`,
-        entryType: 'adjustment',
-        linkedId,
-        lines: [
-          line(map, bankCode(bank), input.amount, 0, 'Contribution'),
-          line(map, CODES.CAPITAL, 0, input.amount, input.description),
-        ],
-      });
-
-      await recordBankTxn(bank, 'credit', input.amount, {
-        date: input.date,
-        description: `Owner contribution: ${input.description}`,
-        category: 'other',
-        reference,
-        linkedId,
-        journalEntryId,
-      });
-    },
-  );
+  await db.transaction('rw', [...ADJUSTMENT_STORES], async () => {
+    await postOwnerContributionTx(input, linkedId, map, bank);
+  });
 
   return linkedId;
 }
 
 /** Owner withdrawal — debits Owner's Capital (301), credits cash/bank. */
-export async function recordOwnerDraw(input: {
-  date: string;
-  description: string;
-  amount: number; // paise
-  paidFrom: 'cash' | 'bank';
-  bankAccountId?: string;
-}): Promise<string> {
+export async function recordOwnerDraw(input: AdjustmentPaymentInput): Promise<string> {
   assertIsoDate(input.date);
   assertPositivePaise(input.amount);
 
   const map = await codeToIdMap();
   const linkedId = uuid();
-  const reference = `EQ-${uuid().slice(0, 8).toUpperCase()}`;
   const bank = await resolveExpensePaymentBank(
     input.paidFrom,
     input.bankAccountId,
     defaultCashBankId,
   );
 
-  await db.transaction(
-    'rw',
-    [db.bankTransactions, db.journalEntries, db.syncQueue],
-    async () => {
-      const journalEntryId = await postJournalEntryTx({
-        date: input.date,
-        reference,
-        description: `Owner draw: ${input.description}`,
-        entryType: 'adjustment',
-        linkedId,
-        lines: [
-          line(map, CODES.CAPITAL, input.amount, 0, input.description),
-          line(map, bankCode(bank), 0, input.amount, 'Withdrawn'),
-        ],
-      });
-
-      await recordBankTxn(bank, 'debit', input.amount, {
-        date: input.date,
-        description: `Owner draw: ${input.description}`,
-        category: 'other',
-        reference,
-        linkedId,
-        journalEntryId,
-      });
-    },
-  );
+  await db.transaction('rw', [...ADJUSTMENT_STORES], async () => {
+    await postOwnerDrawTx(input, linkedId, map, bank);
+  });
 
   return linkedId;
 }
 
 /** Pay credit card bill — debits Credit Cards (203), credits cash/bank. */
-export async function recordCreditCardPayment(input: {
-  date: string;
-  description: string;
-  amount: number; // paise
-  paidFrom: 'cash' | 'bank';
-  bankAccountId?: string;
-}): Promise<string> {
+export async function recordCreditCardPayment(input: AdjustmentPaymentInput): Promise<string> {
   assertIsoDate(input.date);
   assertPositivePaise(input.amount);
 
   const map = await codeToIdMap();
   const linkedId = uuid();
-  const reference = `CC-${uuid().slice(0, 8).toUpperCase()}`;
   const bank = await resolveExpensePaymentBank(
     input.paidFrom,
     input.bankAccountId,
     defaultCashBankId,
   );
 
-  await db.transaction(
-    'rw',
-    [db.bankTransactions, db.journalEntries, db.syncQueue],
-    async () => {
-      const journalEntryId = await postJournalEntryTx({
-        date: input.date,
-        reference,
-        description: `Credit card payment: ${input.description}`,
-        entryType: 'adjustment',
-        linkedId,
-        lines: [
-          line(map, CODES.CREDIT_CARDS, input.amount, 0, input.description),
-          line(map, bankCode(bank), 0, input.amount, 'Paid'),
-        ],
-      });
-
-      await recordBankTxn(bank, 'debit', input.amount, {
-        date: input.date,
-        description: `Credit card payment: ${input.description}`,
-        category: 'other',
-        reference,
-        linkedId,
-        journalEntryId,
-      });
-    },
-  );
+  await db.transaction('rw', [...ADJUSTMENT_STORES], async () => {
+    await postCreditCardPaymentTx(input, linkedId, map, bank);
+  });
 
   return linkedId;
 }
@@ -1124,20 +1163,9 @@ export async function recordCreditCardCharge(input: {
 
   const map = await codeToIdMap();
   const linkedId = uuid();
-  const reference = `CC-${uuid().slice(0, 8).toUpperCase()}`;
 
   await db.transaction('rw', [db.journalEntries, db.syncQueue], async () => {
-    await postJournalEntryTx({
-      date: input.date,
-      reference,
-      description: `Credit card: ${input.description}`,
-      entryType: 'expense',
-      linkedId,
-      lines: [
-        line(map, input.accountCode, input.amount, 0, input.description),
-        line(map, CODES.CREDIT_CARDS, 0, input.amount, 'On card'),
-      ],
-    });
+    await postCreditCardChargeTx(input, linkedId, map);
   });
 
   return linkedId;
@@ -1147,23 +1175,27 @@ export async function recordCreditCardCharge(input: {
 export async function voidAdjustmentRecord(linkedId: string, reason = 'Removed'): Promise<void> {
   assertDbWritable();
   if (!linkedId) throw new Error('Missing record id');
-  await db.transaction(
-    'rw',
-    [db.bankTransactions, db.journalEntries, db.syncQueue],
-    async () => {
-      await reverseBankTxnsFor(linkedId);
-      await voidLinkedJournalEntries(linkedId, [], reason);
-    },
-  );
+  await db.transaction('rw', [...ADJUSTMENT_STORES], async () => {
+    await voidAdjustmentRecordTx(linkedId, reason);
+  });
   requestSync();
 }
 
 export async function updateFixedAssetPurchase(
   linkedId: string,
-  input: Parameters<typeof recordFixedAssetPurchase>[0],
+  input: AdjustmentPaymentInput,
 ): Promise<string> {
-  await voidAdjustmentRecord(linkedId, 'Corrected');
-  return recordFixedAssetPurchase(input);
+  assertIsoDate(input.date);
+  assertPositivePaise(input.amount);
+  const map = await codeToIdMap();
+  const bank = await resolveExpensePaymentBank(
+    input.paidFrom,
+    input.bankAccountId,
+    defaultCashBankId,
+  );
+  return replaceAdjustmentRecord(linkedId, 'Corrected', async (newLinkedId) => {
+    await postFixedAssetPurchaseTx(input, newLinkedId, map, bank);
+  });
 }
 
 export async function updateLoanMovement(
@@ -1177,15 +1209,28 @@ export async function updateLoanMovement(
     bankAccountId?: string;
   },
 ): Promise<string> {
-  await voidAdjustmentRecord(linkedId, 'Corrected');
-  const payload = {
+  const payload: AdjustmentPaymentInput = {
     date: input.date,
     description: input.description,
     amount: input.amount,
     paidFrom: input.paidFrom,
     bankAccountId: input.bankAccountId,
   };
-  return input.kind === 'receive' ? recordLoanReceived(payload) : recordLoanRepayment(payload);
+  assertIsoDate(payload.date);
+  assertPositivePaise(payload.amount);
+  const map = await codeToIdMap();
+  const bank = await resolveExpensePaymentBank(
+    payload.paidFrom,
+    payload.bankAccountId,
+    defaultCashBankId,
+  );
+  return replaceAdjustmentRecord(linkedId, 'Corrected', async (newLinkedId) => {
+    if (input.kind === 'receive') {
+      await postLoanReceivedTx(payload, newLinkedId, map, bank);
+    } else {
+      await postLoanRepaymentTx(payload, newLinkedId, map, bank);
+    }
+  });
 }
 
 export async function updateOwnerCapitalMovement(
@@ -1199,15 +1244,28 @@ export async function updateOwnerCapitalMovement(
     bankAccountId?: string;
   },
 ): Promise<string> {
-  await voidAdjustmentRecord(linkedId, 'Corrected');
-  const payload = {
+  const payload: AdjustmentPaymentInput = {
     date: input.date,
     description: input.description,
     amount: input.amount,
     paidFrom: input.paidFrom,
     bankAccountId: input.bankAccountId,
   };
-  return input.kind === 'contribution' ? recordOwnerContribution(payload) : recordOwnerDraw(payload);
+  assertIsoDate(payload.date);
+  assertPositivePaise(payload.amount);
+  const map = await codeToIdMap();
+  const bank = await resolveExpensePaymentBank(
+    payload.paidFrom,
+    payload.bankAccountId,
+    defaultCashBankId,
+  );
+  return replaceAdjustmentRecord(linkedId, 'Corrected', async (newLinkedId) => {
+    if (input.kind === 'contribution') {
+      await postOwnerContributionTx(payload, newLinkedId, map, bank);
+    } else {
+      await postOwnerDrawTx(payload, newLinkedId, map, bank);
+    }
+  });
 }
 
 export async function updateCreditCardEntry(
@@ -1222,22 +1280,39 @@ export async function updateCreditCardEntry(
     accountCode?: number;
   },
 ): Promise<string> {
-  await voidAdjustmentRecord(linkedId, 'Corrected');
+  assertIsoDate(input.date);
+  assertPositivePaise(input.amount);
+
   if (input.kind === 'payment') {
-    return recordCreditCardPayment({
+    const payload: AdjustmentPaymentInput = {
       date: input.date,
       description: input.description,
       amount: input.amount,
       paidFrom: input.paidFrom ?? 'bank',
       bankAccountId: input.bankAccountId,
+    };
+    const map = await codeToIdMap();
+    const bank = await resolveExpensePaymentBank(
+      payload.paidFrom,
+      payload.bankAccountId,
+      defaultCashBankId,
+    );
+    return replaceAdjustmentRecord(linkedId, 'Corrected', async (newLinkedId) => {
+      await postCreditCardPaymentTx(payload, newLinkedId, map, bank);
     });
   }
+
   if (input.accountCode == null) throw new Error('Expense category required');
-  return recordCreditCardCharge({
+  assertExpenseAccountCode(input.accountCode);
+  const map = await codeToIdMap();
+  const chargeInput = {
     date: input.date,
     description: input.description,
     amount: input.amount,
     accountCode: input.accountCode,
+  };
+  return replaceAdjustmentRecord(linkedId, 'Corrected', async (newLinkedId) => {
+    await postCreditCardChargeTx(chargeInput, newLinkedId, map);
   });
 }
 
