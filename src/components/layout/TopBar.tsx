@@ -48,7 +48,7 @@ export function TopBar({
             {title}
           </h1>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 overflow-visible pr-2 sm:pr-2.5">
+        <div className="flex shrink-0 items-center gap-0.5 overflow-visible pr-0.5 sm:gap-1.5 sm:pr-2.5">
           <SyncBadge compact />
           {right}
         </div>
