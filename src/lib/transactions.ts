@@ -16,7 +16,6 @@ import {
 } from '@/lib/db';
 import { CODES } from '@/lib/coa';
 import { postJournalEntryTx, voidJournalEntryTx } from '@/lib/accounting';
-import { enqueueSync, requestSync } from '@/lib/sync';
 import { addMoney, multiplyMoney, reverseWeightedAverageCost, subtractMoney, weightedAverageCost } from '@/lib/money';
 import {
   assertExpenseAccountCode,
@@ -92,7 +91,6 @@ async function recordBankTxn(
     updatedAt: now(),
   };
   await db.bankTransactions.add(txn);
-  await enqueueSync('bank_transactions', 'create', txn.id, txn);
 }
 
 async function recordStockMovement(
@@ -115,7 +113,6 @@ async function recordStockMovement(
     createdAt: now(),
   };
   await db.stockMovements.add(mv);
-  await enqueueSync('stock_movements', 'create', mv.id, mv);
   return balanceAfter;
 }
 
@@ -125,8 +122,6 @@ async function updateProductStock(
   patch: Partial<Product>,
 ): Promise<void> {
   await db.products.update(id, { ...patch, updatedAt: now() });
-  const updated = await db.products.get(id);
-  if (updated) await enqueueSync('products', 'update', id, updated);
 }
 
 /** Reverse every bank transaction linked to a document (skips prior reversals). */
@@ -203,7 +198,7 @@ export async function recordSale(input: RecordSaleInput): Promise<string> {
 
   await db.transaction(
     'rw',
-    [db.sales, db.products, db.stockMovements, db.bankTransactions, db.journalEntries, db.syncQueue, db.settings],
+    [db.sales, db.products, db.stockMovements, db.bankTransactions, db.journalEntries, db.settings],
     async () => {
       const saleNumber = await nextDocumentNumberTx('saleSequence', 'SALE', input.date);
 
@@ -293,7 +288,6 @@ export async function recordSale(input: RecordSaleInput): Promise<string> {
       };
 
       await db.sales.add(sale);
-      await enqueueSync('sales', 'create', saleId, sale);
 
       for (const item of items) {
         const product = await db.products.get(item.productId);
@@ -324,8 +318,6 @@ export async function recordSale(input: RecordSaleInput): Promise<string> {
       }
     },
   );
-
-  requestSync();
   return saleId;
 }
 
@@ -336,7 +328,7 @@ export async function voidSale(saleId: string, reason: string): Promise<void> {
 
   await db.transaction(
     'rw',
-    [db.sales, db.products, db.stockMovements, db.bankAccounts, db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.sales, db.products, db.stockMovements, db.bankAccounts, db.bankTransactions, db.journalEntries],
     async () => {
       await voidLinkedJournalEntries(saleId, [sale.journalEntryId, sale.cogsEntryId], reason);
 
@@ -359,11 +351,8 @@ export async function voidSale(saleId: string, reason: string): Promise<void> {
       await reverseBankTxnsFor(saleId);
 
       await db.sales.update(saleId, { status: 'void', updatedAt: now() });
-      const updated = await db.sales.get(saleId);
-      if (updated) await enqueueSync('sales', 'update', saleId, updated);
     },
   );
-  requestSync();
 }
 
 /** Receive a payment against a credit/partial sale (customer receivable). */
@@ -384,7 +373,7 @@ export async function receiveSalePayment(
 
   await db.transaction(
     'rw',
-    [db.sales, db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.sales, db.bankTransactions, db.journalEntries],
     async () => {
       // Re-read inside the transaction to avoid double-payment races.
       const sale = await db.sales.get(saleId);
@@ -425,11 +414,8 @@ export async function receiveSalePayment(
         status: dueAmount === 0 ? 'completed' : 'partial',
         updatedAt: now(),
       });
-      const updated = await db.sales.get(saleId);
-      if (updated) await enqueueSync('sales', 'update', saleId, updated);
     },
   );
-  requestSync();
 }
 
 // ─── PURCHASES ────────────────────────────────────────────────
@@ -484,7 +470,7 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<string
 
   await db.transaction(
     'rw',
-    [db.purchases, db.products, db.stockMovements, db.bankTransactions, db.journalEntries, db.syncQueue, db.settings],
+    [db.purchases, db.products, db.stockMovements, db.bankTransactions, db.journalEntries, db.settings],
     async () => {
       const purchaseNumber = await nextDocumentNumberTx('purchaseSequence', 'PUR', input.date);
       for (const item of input.items) {
@@ -525,7 +511,6 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<string
       };
 
       await db.purchases.add(purchase);
-      await enqueueSync('purchases', 'create', purchaseId, purchase);
 
       for (const item of input.items) {
         const product = (await db.products.get(item.productId))!;
@@ -557,8 +542,6 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<string
       }
     },
   );
-
-  requestSync();
   return purchaseId;
 }
 
@@ -580,7 +563,7 @@ export async function payPurchase(
 
   await db.transaction(
     'rw',
-    [db.purchases, db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.purchases, db.bankTransactions, db.journalEntries],
     async () => {
       const purchase = await db.purchases.get(purchaseId);
       if (!purchase) throw new Error('Purchase not found');
@@ -620,11 +603,8 @@ export async function payPurchase(
         status: dueAmount === 0 ? 'completed' : 'partial',
         updatedAt: now(),
       });
-      const updated = await db.purchases.get(purchaseId);
-      if (updated) await enqueueSync('purchases', 'update', purchaseId, updated);
     },
   );
-  requestSync();
 }
 
 export async function voidPurchase(purchaseId: string, reason: string): Promise<void> {
@@ -634,7 +614,7 @@ export async function voidPurchase(purchaseId: string, reason: string): Promise<
 
   await db.transaction(
     'rw',
-    [db.purchases, db.products, db.stockMovements, db.bankAccounts, db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.purchases, db.products, db.stockMovements, db.bankAccounts, db.bankTransactions, db.journalEntries],
     async () => {
       await voidLinkedJournalEntries(purchaseId, [purchase.journalEntryId], reason);
 
@@ -672,11 +652,8 @@ export async function voidPurchase(purchaseId: string, reason: string): Promise<
       await reverseBankTxnsFor(purchaseId);
 
       await db.purchases.update(purchaseId, { status: 'void', updatedAt: now() });
-      const updated = await db.purchases.get(purchaseId);
-      if (updated) await enqueueSync('purchases', 'update', purchaseId, updated);
     },
   );
-  requestSync();
 }
 
 // ─── EXPENSES ─────────────────────────────────────────────────
@@ -707,7 +684,7 @@ export async function recordExpense(input: RecordExpenseInput): Promise<string> 
 
   await db.transaction(
     'rw',
-    [db.expenses, db.bankTransactions, db.journalEntries, db.syncQueue, db.settings],
+    [db.expenses, db.bankTransactions, db.journalEntries, db.settings],
     async () => {
       if (input.recurringExpenseId) {
         const monthPrefix = input.date.slice(0, 7);
@@ -756,7 +733,6 @@ export async function recordExpense(input: RecordExpenseInput): Promise<string> 
       };
 
       await db.expenses.add(expense);
-      await enqueueSync('expenses', 'create', expenseId, expense);
       await recordBankTxn(bank, 'debit', input.amount, {
         date: input.date,
         description: `${input.category}: ${input.description}`,
@@ -767,8 +743,6 @@ export async function recordExpense(input: RecordExpenseInput): Promise<string> 
       });
     },
   );
-
-  requestSync();
   return expenseId;
 }
 
@@ -779,16 +753,13 @@ export async function voidExpense(expenseId: string, reason: string): Promise<vo
 
   await db.transaction(
     'rw',
-    [db.expenses, db.bankAccounts, db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.expenses, db.bankAccounts, db.bankTransactions, db.journalEntries],
     async () => {
       await voidLinkedJournalEntries(expenseId, [expense.journalEntryId], reason);
       await reverseBankTxnsFor(expenseId);
       await db.expenses.update(expenseId, { voidedAt: now(), updatedAt: now() });
-      const updated = await db.expenses.get(expenseId);
-      if (updated) await enqueueSync('expenses', 'update', expenseId, updated);
     },
   );
-  requestSync();
 }
 
 // ─── BANKING ──────────────────────────────────────────────────
@@ -817,7 +788,7 @@ export async function transferBetweenBanks(input: {
 
   await db.transaction(
     'rw',
-    [db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.bankTransactions, db.journalEntries],
     async () => {
       // Always post a balanced journal entry (even when both banks share COA 102 — nets to zero).
       const journalEntryId = await postJournalEntryTx({
@@ -847,10 +818,9 @@ export async function transferBetweenBanks(input: {
       });
     },
   );
-  requestSync();
 }
 
-const ADJUSTMENT_STORES = [db.bankTransactions, db.journalEntries, db.syncQueue] as const;
+const ADJUSTMENT_STORES = [db.bankTransactions, db.journalEntries] as const;
 
 type AdjustmentPaymentInput = {
   date: string;
@@ -879,7 +849,6 @@ async function replaceAdjustmentRecord(
     await voidAdjustmentRecordTx(linkedId, reason);
     await repost(newLinkedId);
   });
-  requestSync();
   return newLinkedId;
 }
 
@@ -1204,7 +1173,7 @@ export async function recordCreditCardCharge(input: {
   const map = await codeToIdMap();
   const linkedId = uuid();
 
-  await db.transaction('rw', [db.journalEntries, db.syncQueue], async () => {
+  await db.transaction('rw', [db.journalEntries], async () => {
     await postCreditCardChargeTx(input, linkedId, map);
   });
 
@@ -1218,7 +1187,6 @@ export async function voidAdjustmentRecord(linkedId: string, reason = 'Removed')
   await db.transaction('rw', [...ADJUSTMENT_STORES], async () => {
     await voidAdjustmentRecordTx(linkedId, reason);
   });
-  requestSync();
 }
 
 export async function updateFixedAssetPurchase(
@@ -1384,7 +1352,7 @@ export async function recordManualBankEntry(input: {
 
   await db.transaction(
     'rw',
-    [db.bankTransactions, db.journalEntries, db.syncQueue],
+    [db.bankTransactions, db.journalEntries],
     async () => {
       const journalEntryId = await postJournalEntryTx({
         date: input.date,
@@ -1508,8 +1476,6 @@ async function voidSalePaymentTxn(txn: BankTransaction, reason: string): Promise
     dueAmount === sale.total ? 'credit' : dueAmount === 0 ? 'completed' : 'partial';
 
   await db.sales.update(saleId, { paidAmount, dueAmount, status, updatedAt: now() });
-  const updated = await db.sales.get(saleId);
-  if (updated) await enqueueSync('sales', 'update', saleId, updated);
 }
 
 async function voidPurchasePaymentTxn(txn: BankTransaction, reason: string): Promise<void> {
@@ -1536,8 +1502,6 @@ async function voidPurchasePaymentTxn(txn: BankTransaction, reason: string): Pro
     dueAmount === purchase.total ? 'credit' : dueAmount === 0 ? 'completed' : 'partial';
 
   await db.purchases.update(purchaseId, { paidAmount, dueAmount, status, updatedAt: now() });
-  const updated = await db.purchases.get(purchaseId);
-  if (updated) await enqueueSync('purchases', 'update', purchaseId, updated);
 }
 
 export type BankTxnVoidEligibility =
@@ -1605,7 +1569,7 @@ export async function voidBankTransaction(txnId: string, reason: string): Promis
 
   await db.transaction(
     'rw',
-    [db.bankTransactions, db.bankAccounts, db.journalEntries, db.sales, db.purchases, db.syncQueue],
+    [db.bankTransactions, db.bankAccounts, db.journalEntries, db.sales, db.purchases],
     async () => {
       const current = await db.bankTransactions.get(txnId);
       if (!current) throw new Error('Transaction not found');
@@ -1631,7 +1595,6 @@ export async function voidBankTransaction(txnId: string, reason: string): Promis
       await voidStandaloneBankTxn(current, trimmed);
     },
   );
-  requestSync();
 }
 
 // ─── INVENTORY ────────────────────────────────────────────────
@@ -1651,7 +1614,7 @@ export async function adjustStock(input: {
 
   await db.transaction(
     'rw',
-    [db.products, db.stockMovements, db.journalEntries, db.syncQueue],
+    [db.products, db.stockMovements, db.journalEntries],
     async () => {
       const product = await db.products.get(input.productId);
       if (!product) throw new Error('Product not found');

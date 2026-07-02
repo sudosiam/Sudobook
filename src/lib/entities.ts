@@ -26,7 +26,6 @@ import { getFYStartYear } from '@/lib/sequences';
 
 import { postJournalEntryTx } from '@/lib/accounting';
 
-import { enqueueSync } from '@/lib/sync';
 
 import { multiplyMoney } from '@/lib/money';
 
@@ -59,8 +58,6 @@ const ENTITY_JOURNAL_STORES = [
   db.stockMovements,
 
   db.journalEntries,
-
-  db.syncQueue,
 
   db.accounts,
 
@@ -174,8 +171,6 @@ export async function createCustomer(data: CustomerFormData): Promise<string> {
 
     await db.customers.add(customer);
 
-    await enqueueSync('customers', 'create', id, customer);
-
   });
 
   return id;
@@ -250,13 +245,9 @@ export async function updateCustomer(
 
 ): Promise<void> {
 
-  await db.transaction('rw', [db.customers, db.syncQueue], async () => {
+  await db.transaction('rw', [db.customers], async () => {
 
     await db.customers.update(id, { ...data, updatedAt: now() });
-
-    const updated = await db.customers.get(id);
-
-    if (updated) await enqueueSync('customers', 'update', id, updated);
 
   });
 
@@ -328,8 +319,6 @@ export async function createVendor(data: VendorFormData): Promise<string> {
 
     await db.vendors.add(vendor);
 
-    await enqueueSync('vendors', 'create', id, vendor);
-
   });
 
   return id;
@@ -346,13 +335,9 @@ export async function updateVendor(
 
 ): Promise<void> {
 
-  await db.transaction('rw', [db.vendors, db.syncQueue], async () => {
+  await db.transaction('rw', [db.vendors], async () => {
 
     await db.vendors.update(id, { ...data, updatedAt: now() });
-
-    const updated = await db.vendors.get(id);
-
-    if (updated) await enqueueSync('vendors', 'update', id, updated);
 
   });
 
@@ -430,8 +415,6 @@ export async function createProduct(data: ProductFormData): Promise<string> {
 
     await db.products.add(product);
 
-    await enqueueSync('products', 'create', id, product);
-
     if (data.stockQty > 0) {
 
       const mv = {
@@ -458,8 +441,6 @@ export async function createProduct(data: ProductFormData): Promise<string> {
 
       await db.stockMovements.add(mv);
 
-      await enqueueSync('stock_movements', 'create', mv.id, mv);
-
     }
 
   });
@@ -482,7 +463,7 @@ export async function updateProduct(
 
 ): Promise<void> {
 
-  await db.transaction('rw', [db.products, db.syncQueue], async () => {
+  await db.transaction('rw', [db.products], async () => {
 
     if (data.sku) {
       const dupe = await db.products.where('sku').equals(data.sku).first();
@@ -490,10 +471,6 @@ export async function updateProduct(
     }
 
     await db.products.update(id, { ...data, updatedAt: now() });
-
-    const updated = await db.products.get(id);
-
-    if (updated) await enqueueSync('products', 'update', id, updated);
 
   });
 
@@ -571,8 +548,6 @@ export async function createBankAccount(data: BankAccountFormData): Promise<stri
 
     await db.bankAccounts.add(bank);
 
-    await enqueueSync('bank_accounts', 'create', id, bank);
-
   });
 
   return id;
@@ -589,13 +564,9 @@ export async function updateBankAccount(
 
 ): Promise<void> {
 
-  await db.transaction('rw', [db.bankAccounts, db.syncQueue], async () => {
+  await db.transaction('rw', [db.bankAccounts], async () => {
 
     await db.bankAccounts.update(id, { ...data, updatedAt: now() });
-
-    const updated = await db.bankAccounts.get(id);
-
-    if (updated) await enqueueSync('bank_accounts', 'update', id, updated);
 
   });
 

@@ -1,5 +1,4 @@
 import { db, now, type JournalEntry } from '@/lib/db';
-import { enqueueSync } from '@/lib/sync';
 
 export const VOID_REVERSAL_CLEANUP_MIGRATION = 'void-reversal-cleanup-v1';
 
@@ -47,7 +46,7 @@ export async function repairVoidDoubleReversals(): Promise<VoidReversalCleanupRe
 
   const voidedIds: string[] = [];
 
-  await db.transaction('rw', db.journalEntries, db.syncQueue, async () => {
+  await db.transaction('rw', db.journalEntries, async () => {
     for (const rev of orphans) {
       const fresh = await db.journalEntries.get(rev.id);
       if (!fresh || fresh.status !== 'posted' || !fresh.reversalOf) continue;
@@ -57,8 +56,7 @@ export async function repairVoidDoubleReversals(): Promise<VoidReversalCleanupRe
 
       await db.journalEntries.update(rev.id, { status: 'void', updatedAt: now() });
       const updated = await db.journalEntries.get(rev.id);
-      if (updated) {
-        await enqueueSync('journal_entries', 'update', rev.id, updated);
+      if (updated) {
         voidedIds.push(rev.id);
       }
     }

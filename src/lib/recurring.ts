@@ -1,6 +1,5 @@
 import { db, activeWhere, now, uuid, type RecurringExpense } from '@/lib/db';
 import { recordExpense } from '@/lib/transactions';
-import { enqueueSync } from '@/lib/sync';
 
 import { recurringExpenseSchema } from '@/lib/validators';
 
@@ -55,18 +54,15 @@ export async function createRecurringExpense(input: RecurringExpenseInput): Prom
     createdAt: now(),
     updatedAt: now(),
   };
-  await db.transaction('rw', [db.recurringExpenses, db.syncQueue], async () => {
+  await db.transaction('rw', [db.recurringExpenses], async () => {
     await db.recurringExpenses.add(row);
-    await enqueueSync('recurring_expenses', 'create', id, row);
   });
   return id;
 }
 
 export async function deactivateRecurringExpense(id: string): Promise<void> {
-  await db.transaction('rw', [db.recurringExpenses, db.syncQueue], async () => {
+  await db.transaction('rw', [db.recurringExpenses], async () => {
     await db.recurringExpenses.update(id, { isActive: false, updatedAt: now() });
-    const updated = await db.recurringExpenses.get(id);
-    if (updated) await enqueueSync('recurring_expenses', 'update', id, updated);
   });
 }
 
@@ -81,7 +77,7 @@ export async function postRecurringForMonth(
   // focus event, manual tap) can't both post the same recurring expense.
   let claimed = false;
   let prev: string | undefined;
-  await db.transaction('rw', [db.recurringExpenses, db.syncQueue], async () => {
+  await db.transaction('rw', [db.recurringExpenses], async () => {
     const fresh = await db.recurringExpenses.get(recurring.id);
     if (!fresh || !fresh.isActive) return;
     if (fresh.lastPostedMonth && fresh.lastPostedMonth >= monthKey) return;
@@ -90,8 +86,6 @@ export async function postRecurringForMonth(
       lastPostedMonth: monthKey,
       updatedAt: now(),
     });
-    const updated = await db.recurringExpenses.get(recurring.id);
-    if (updated) await enqueueSync('recurring_expenses', 'update', recurring.id, updated);
     claimed = true;
   });
 
@@ -111,13 +105,11 @@ export async function postRecurringForMonth(
     });
   } catch (err) {
     // Posting failed — release the claim so it can be retried later.
-    await db.transaction('rw', [db.recurringExpenses, db.syncQueue], async () => {
+    await db.transaction('rw', [db.recurringExpenses], async () => {
       await db.recurringExpenses.update(recurring.id, {
         lastPostedMonth: prev,
         updatedAt: now(),
       });
-      const updated = await db.recurringExpenses.get(recurring.id);
-      if (updated) await enqueueSync('recurring_expenses', 'update', recurring.id, updated);
     });
     throw err;
   }

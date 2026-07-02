@@ -2,7 +2,6 @@ import { db, now, type Account, type AppSettings, type BankAccount } from '@/lib
 import { DEFAULT_ACCOUNTS, CODES, accountUuid, CASH_DRAWER_ID } from '@/lib/coa';
 import { syncDefaultCategories } from '@/lib/categories';
 import { getCurrentFY } from '@/lib/sequences';
-import { enqueueSync } from '@/lib/sync';
 import { INITIAL_MIGRATION_TOKENS, runMigrations } from '@/lib/migrations/runner';
 
 /** Short random per-device code (e.g. "A3F9K2") keeps document numbers unique across devices. */
@@ -39,7 +38,6 @@ async function seedMissingAccountsTx(): Promise<boolean> {
       updatedAt: now(),
     };
     await db.accounts.add(account);
-    await enqueueSync('accounts', 'create', account.id, account);
     added = true;
   }
   return added;
@@ -55,7 +53,7 @@ export async function ensureDefaultAccounts(): Promise<void> {
   );
   if (missingEssential.every((code) => code === null)) return;
 
-  await db.transaction('rw', [db.accounts, db.syncQueue], seedMissingAccountsTx);
+  await db.transaction('rw', [db.accounts], seedMissingAccountsTx);
 }
 
 async function ensureCashDrawerTx(): Promise<void> {
@@ -75,7 +73,6 @@ async function ensureCashDrawerTx(): Promise<void> {
       updatedAt: now(),
     } satisfies BankAccount;
     await db.bankAccounts.add(cashDrawer);
-    await enqueueSync('bank_accounts', 'create', cashDrawer.id, cashDrawer);
   }
 
   const settings = await db.settings.get('singleton');
@@ -96,7 +93,7 @@ export async function seedDatabase(): Promise<void> {
   const existing = await db.settings.get('singleton');
   if (existing?.seeded) {
     await ensureDefaultAccounts();
-    await db.transaction('rw', [db.bankAccounts, db.settings, db.syncQueue], ensureCashDrawerTx);
+    await db.transaction('rw', [db.bankAccounts, db.settings], ensureCashDrawerTx);
     await runMigrations();
     return;
   }
@@ -107,7 +104,6 @@ export async function seedDatabase(): Promise<void> {
     db.bankAccounts,
     db.productCategories,
     db.settings,
-    db.syncQueue,
     async () => {
       await seedMissingAccountsTx();
 
@@ -130,7 +126,6 @@ export async function seedDatabase(): Promise<void> {
           updatedAt: now(),
         } satisfies BankAccount;
         await db.bankAccounts.add(cashDrawer);
-        await enqueueSync('bank_accounts', 'create', cashDrawer.id, cashDrawer);
       }
 
       const settings: AppSettings = {

@@ -1,7 +1,5 @@
 import { db, now, type ProductCategory } from '@/lib/db';
 import { DEFAULT_CATEGORIES } from '@/lib/categories';
-import { enqueueSync } from '@/lib/sync';
-import { isValidSyncRecordId } from '@/lib/syncIds';
 
 export const CATEGORY_SLUG_MIGRATION = 'category-slug-to-uuid-v1';
 
@@ -16,7 +14,7 @@ const LEGACY_SLUGS = ['escooter', 'erickshaw', 'battery', 'part', 'other'] as co
 export async function migrateCategorySlugIds(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.productCategories, db.products, db.syncQueue],
+    [db.productCategories, db.products],
     async () => {
       for (const seed of DEFAULT_CATEGORIES) {
         const newId = seed.id;
@@ -29,7 +27,6 @@ export async function migrateCategorySlugIds(): Promise<void> {
         for (const p of products) {
           const fixed = { ...p, category: newId, updatedAt: now() };
           await db.products.put(fixed);
-          await enqueueSync('products', 'update', fixed.id, fixed);
         }
 
         const existingNew = await db.productCategories.get(newId);
@@ -40,13 +37,10 @@ export async function migrateCategorySlugIds(): Promise<void> {
               updatedAt: now(),
             });
             await db.productCategories.delete(legacySlug);
-            const updated = await db.productCategories.get(newId);
-            if (updated) await enqueueSync('product_categories', 'update', newId, updated);
           } else {
             const migrated: ProductCategory = { ...oldCat, id: newId, updatedAt: now() };
             await db.productCategories.delete(legacySlug);
             await db.productCategories.put(migrated);
-            await enqueueSync('product_categories', 'create', newId, migrated);
           }
         } else if (!existingNew) {
           const category: ProductCategory = {
@@ -59,15 +53,6 @@ export async function migrateCategorySlugIds(): Promise<void> {
             updatedAt: now(),
           };
           await db.productCategories.put(category);
-          await enqueueSync('product_categories', 'create', newId, category);
-        }
-      }
-
-      // Drop sync-queue rows that can never succeed (non-uuid category ids).
-      const catQueue = await db.syncQueue.filter((i) => i.table === 'product_categories').toArray();
-      for (const item of catQueue) {
-        if (!isValidSyncRecordId(item.recordId) || LEGACY_SLUGS.includes(item.recordId as (typeof LEGACY_SLUGS)[number])) {
-          await db.syncQueue.delete(item.id);
         }
       }
     },

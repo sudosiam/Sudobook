@@ -7,7 +7,7 @@ import { DbOutdatedBanner } from '@/components/common/DbOutdatedBanner';
 import { PwaUpdateBanner } from '@/components/common/PwaUpdateBanner';
 import { seedDatabase } from '@/lib/seed';
 import { postDueRecurringExpenses } from '@/lib/recurring';
-import { ensureSyncReset, startSyncEngine } from '@/lib/sync';
+import { startSyncEngine } from '@/lib/sync';
 import { startBackupScheduler } from '@/lib/scheduledBackup';
 import { applyTheme, getStoredTheme } from '@/store/useThemeStore';
 import '@fontsource/inter/latin-400.css';
@@ -47,7 +47,6 @@ async function bootstrap() {
 
   try {
     await seedDatabase();
-    await ensureSyncReset();
     try {
       await postDueRecurringExpenses();
     } catch (err) {

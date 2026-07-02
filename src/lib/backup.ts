@@ -1,5 +1,6 @@
 import { db, now, uuid, type BackupSnapshot } from '@/lib/db';
-import { enqueueSync } from '@/lib/sync';
+import { isCloudLoggedIn } from '@/lib/cloud';
+import { syncNow } from '@/lib/sync';
 
 const MAX_LOCAL_SNAPSHOTS = 5;
 
@@ -19,23 +20,6 @@ const TABLES = [
   'stockMovements',
   'settings',
 ] as const;
-
-/** Dexie store name → Supabase table name for sync queue. */
-const REMOTE_TABLE: Record<string, string> = {
-  accounts: 'accounts',
-  journalEntries: 'journal_entries',
-  customers: 'customers',
-  vendors: 'vendors',
-  products: 'products',
-  productCategories: 'product_categories',
-  sales: 'sales',
-  purchases: 'purchases',
-  expenses: 'expenses',
-  recurringExpenses: 'recurring_expenses',
-  bankAccounts: 'bank_accounts',
-  bankTransactions: 'bank_transactions',
-  stockMovements: 'stock_movements',
-};
 
 export interface BackupFile {
   app: 'sudo-books';
@@ -131,31 +115,14 @@ export async function restoreBackup(backup: BackupFile): Promise<void> {
       await db.table(t).bulkPut(stamped);
     }
 
-    await db.syncQueue.clear();
-
-    // Queue every restored row for push so the cloud catches up to local.
-    for (const [local, remote] of Object.entries(REMOTE_TABLE)) {
-      const rows = backup.data[local];
-      if (!Array.isArray(rows)) continue;
-      for (const row of rows) {
-        const r = row as { id: string };
-        const stamped = {
-          ...(row as Record<string, unknown>),
-          updatedAt: restoredAt,
-          createdAt: (row as { createdAt?: string }).createdAt ?? restoredAt,
-        };
-        await enqueueSync(remote, 'update', r.id, stamped);
-      }
-    }
-
-    // Advance pull watermark so an immediate pull won't overwrite restored data.
-    const settings = await db.settings.get('singleton');
-    if (settings) {
-      await db.settings.update('singleton', {
-        lastPullAt: restoredAt,
-        lastPullAtByTable: undefined,
-        lastSyncAt: undefined,
-      });
-    }
+    await db.settings.update('singleton', {
+      lastSyncAt: undefined,
+      lastPullAt: undefined,
+      lastPullAtByTable: undefined,
+    });
   });
+
+  if (isCloudLoggedIn()) {
+    await syncNow();
+  }
 }

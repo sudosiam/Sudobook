@@ -1,6 +1,5 @@
 import { db, now, uuid, type Account } from '@/lib/db';
 import { CODES, sortAccountsByCode } from '@/lib/coa';
-import { enqueueSync } from '@/lib/sync';
 import { invalidateCodeToIdMap } from '@/lib/transactions';
 
 /** Built-in operating expense accounts — cannot be deleted. */
@@ -54,7 +53,7 @@ export async function createExpenseCategory(name: string): Promise<string> {
   if (!trimmed) throw new Error('Category name required');
 
   let id = '';
-  await db.transaction('rw', db.accounts, db.syncQueue, async () => {
+  await db.transaction('rw', db.accounts, async () => {
     const dupe = await db.accounts
       .filter(
         (a) =>
@@ -78,7 +77,6 @@ export async function createExpenseCategory(name: string): Promise<string> {
       updatedAt: now(),
     };
     await db.accounts.add(account);
-    await enqueueSync('accounts', 'create', id, account);
   });
 
   invalidateCodeToIdMap();
@@ -89,7 +87,7 @@ export async function updateExpenseCategory(
   id: string,
   patch: Partial<Pick<Account, 'name' | 'isActive'>>,
 ): Promise<void> {
-  await db.transaction('rw', db.accounts, db.syncQueue, async () => {
+  await db.transaction('rw', db.accounts, async () => {
     const acc = await db.accounts.get(id);
     if (!acc || acc.type !== 'expense') throw new Error('Category not found');
     if (isDefaultExpenseAccount(acc.code) && patch.isActive === false) {
@@ -113,8 +111,6 @@ export async function updateExpenseCategory(
     }
 
     await db.accounts.update(id, { ...patch, updatedAt: now() });
-    const updated = await db.accounts.get(id);
-    if (updated) await enqueueSync('accounts', 'update', id, updated);
   });
 
   invalidateCodeToIdMap();

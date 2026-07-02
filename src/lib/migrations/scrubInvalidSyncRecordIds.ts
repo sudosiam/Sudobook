@@ -7,7 +7,6 @@ import {
   isLegacyCategorySlug,
   legacySlugToCategoryUuid,
 } from '@/lib/migrations/categorySlugToUuid';
-import { enqueueSync } from '@/lib/sync';
 import { isBrokenCategoryUuid, isValidSyncRecordId } from '@/lib/syncIds';
 
 export const SCRUB_INVALID_SYNC_IDS_MIGRATION = 'scrub-invalid-sync-ids-v1';
@@ -17,14 +16,7 @@ export const SCRUB_INVALID_SYNC_IDS_MIGRATION = 'scrub-invalid-sync-ids-v1';
  * and remap products still pointing at legacy slug / broken category ids.
  */
 export async function scrubInvalidSyncRecordIds(): Promise<void> {
-  await db.transaction('rw', [db.products, db.syncQueue], async () => {
-      const queue = await db.syncQueue.toArray();
-      for (const item of queue) {
-        if (!isValidSyncRecordId(item.recordId)) {
-          await db.syncQueue.delete(item.id);
-        }
-      }
-
+  await db.transaction('rw', [db.products], async () => {
       const brokenToCanonical = new Map<string, string>();
       for (const seed of DEFAULT_CATEGORIES) {
         if (seed.legacySlug) {
@@ -44,7 +36,6 @@ export async function scrubInvalidSyncRecordIds(): Promise<void> {
         if (canonical !== p.category && isValidSyncRecordId(canonical)) {
           const fixed = { ...p, category: canonical, updatedAt: now() };
           await db.products.put(fixed);
-          await enqueueSync('products', 'update', fixed.id, fixed);
         }
       }
   });

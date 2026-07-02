@@ -1,48 +1,57 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db';
-import { runSync } from '@/lib/sync';
+import { isDexieCloudConfigured } from '@/lib/cloud';
+import { syncNow } from '@/lib/sync';
 import { useSyncStore } from '@/store/useSyncStore';
-import { isSupabaseConfigured } from '@/lib/supabase';
 
-/** Reactive pending-count + a manual "Sync Now" trigger. */
+/** Reactive Dexie Cloud sync status + manual "Sync Now". */
 export function useSync() {
-  const setPendingCount = useSyncStore((s) => s.setPendingCount);
   const setStatus = useSyncStore((s) => s.setStatus);
+  const setLastSync = useSyncStore((s) => s.setLastSync);
   const inFlight = useRef(false);
 
-  const pending = useLiveQuery(
-    () => db.syncQueue.where('status').equals('pending').count(),
-    [],
-    0,
-  );
-  const failed = useLiveQuery(
-    () => db.syncQueue.where('status').equals('failed').count(),
-    [],
-    0,
-  );
-
   useEffect(() => {
-    setPendingCount((pending ?? 0) + (failed ?? 0));
-  }, [pending, failed, setPendingCount]);
+    if (!isDexieCloudConfigured) return;
 
-  useEffect(() => {
-    if (useSyncStore.getState().status === 'syncing') return;
-    if ((failed ?? 0) > 0) setStatus('error');
-    else if ((pending ?? 0) === 0 && (failed ?? 0) === 0) setStatus('idle');
-  }, [pending, failed, setStatus]);
+    const syncSub = db.cloud.syncState.subscribe((state) => {
+      const pending =
+        state.phase === 'not-in-sync' || state.phase === 'pushing' || state.phase === 'pulling';
+      useSyncStore.getState().setPendingCount(pending ? 1 : 0);
+      if (state.phase === 'error') setStatus('error');
+      else if (pending) setStatus('syncing');
+      else setStatus('idle');
+    });
 
-  const syncNow = useCallback(async () => {
-    if (!isSupabaseConfigured || inFlight.current) return;
+    const persistedSub = db.cloud.persistedSyncState.subscribe((persisted) => {
+      if (persisted?.timestamp) setLastSync(persisted.timestamp.toISOString());
+    });
+
+    return () => {
+      syncSub.unsubscribe();
+      persistedSub.unsubscribe();
+    };
+  }, [setStatus, setLastSync]);
+
+  const syncNowHandler = useCallback(async () => {
+    if (!isDexieCloudConfigured || inFlight.current) return;
     inFlight.current = true;
     try {
-      await runSync({ manualRetry: true });
+      await syncNow();
     } catch {
-      setStatus('error');
+      /* syncNow logs and sets store status */
     } finally {
       inFlight.current = false;
     }
-  }, [setStatus]);
+  }, []);
 
-  return { pendingCount: (pending ?? 0) + (failed ?? 0), failedCount: failed ?? 0, syncNow, isSupabaseConfigured };
+  const phase = isDexieCloudConfigured ? db.cloud.syncState.value.phase : 'in-sync';
+  const pendingCount = phase === 'not-in-sync' || phase === 'pushing' ? 1 : 0;
+  const failedCount = isDexieCloudConfigured && phase === 'error' ? 1 : 0;
+
+  return {
+    pendingCount,
+    failedCount,
+    syncNow: syncNowHandler,
+    isCloudConfigured: isDexieCloudConfigured,
+  };
 }

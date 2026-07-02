@@ -1,771 +1,127 @@
-import { db, now, uuid, type SyncQueueItem } from '@/lib/db';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import {
-  SYNC_TABLE_MAP,
-  getSupabaseSchemaStatus,
-  isMissingTableError,
-  verifySupabaseSchema,
-  type RemoteSyncTable,
-} from '@/lib/supabaseSchema';
-import { toast } from '@/store/useToast';
+import { db } from '@/lib/db';
+import { configureDexieCloud, isDexieCloudConfigured } from '@/lib/cloud';
 import { useSyncStore } from '@/store/useSyncStore';
-import { postDueRecurringExpenses } from '@/lib/recurring';
-import {
-  classifySyncError,
-  isInvalidUuidSyncError,
-  isRateLimitError,
-  syncErrorMessage,
-} from '@/lib/syncErrors';
-import { isValidSyncRecordId } from '@/lib/syncIds';
 
-export { getSupabaseSchemaStatus, verifySupabaseSchema };
+let syncStateSub: { unsubscribe: () => void } | null = null;
+let onlineHandler: (() => void) | null = null;
 
-const MAX_RETRIES = 3;
-const SYNC_BATCH_SIZE = 100;
-const PULL_PAGE_SIZE = 500;
-/** Background sync interval while the app is open and online. */
-const SYNC_INTERVAL_MS = 10_000;
-/** Minimum gap between automatic sync cycles (focus/interval/visibility). */
-const MIN_AUTO_SYNC_GAP_MS = 15_000;
-/** Refresh JWT at most this often — avoids Supabase Auth rate limits. */
-const AUTH_REFRESH_MIN_MS = 5 * 60 * 1000;
-/** Back off auth API calls after a rate-limit response. */
-const AUTH_RATE_LIMIT_BACKOFF_MS = 90_000;
-/** Refresh JWT when it expires within this window. */
-const AUTH_EXPIRY_BUFFER_MS = 120_000;
-/** Warn once when the outbound sync backlog may threaten IndexedDB quota. */
-const SYNC_QUEUE_WARN_SIZE = 500;
-/** Drop unrecoverable failed queue rows after this many days (local data kept). */
-const FAILED_SYNC_PURGE_DAYS = 90;
+function applySyncState(): void {
+  if (!isDexieCloudConfigured) return;
+  const state = db.cloud.syncState.value;
+  const syncing =
+    state.phase === 'initial' ||
+    state.phase === 'pushing' ||
+    state.phase === 'pulling' ||
+    state.phase === 'not-in-sync';
 
-const warnedFailedSync = new Set<string>();
-const warnedQueueBacklog = { value: false };
-const LOCAL_BY_REMOTE = new Map(SYNC_TABLE_MAP.map((t) => [t.remote, t.local]));
-
-const warnedMissingTables = new Set<string>();
-/** Remote tables confirmed absent this session — skip pull/push to avoid 404 spam. */
-const missingRemoteTables = new Set<string>();
-
-function warnMissingTableOnce(table: string): void {
-  if (warnedMissingTables.has(table)) return;
-  warnedMissingTables.add(table);
-  missingRemoteTables.add(table);
-  console.warn(
-    `[sync] Supabase table "${table}" is missing — apply supabase/migrations/006_recurring_expenses.sql and 007_product_categories.sql in your Supabase project. Local data is safe.`,
-  );
-  toast.info(
-    `Cloud sync: "${table}" missing in Supabase — open Supabase Dashboard → SQL Editor and run supabase/migrations/RUN_ME_PENDING.sql`,
-  );
-}
-
-/** Probe all mirror tables via supabase-js and refresh the skip-list. */
-let schemaCheckedAt = 0;
-const SCHEMA_CACHE_MS = 5 * 60 * 1000;
-
-async function refreshSupabaseSchema(force = false): Promise<void> {
-  if (!force && Date.now() - schemaCheckedAt < SCHEMA_CACHE_MS) return;
-  const status = await verifySupabaseSchema();
-  schemaCheckedAt = Date.now();
-  const missingSet = new Set(status.missing);
-  for (const { remote } of SYNC_TABLE_MAP) {
-    if (missingSet.has(remote)) warnMissingTableOnce(remote);
-    else missingRemoteTables.delete(remote);
-  }
-}
-
-/** True when a local change is still waiting to push — pull must not overwrite it. */
-async function hasPendingLocalSync(table: string, recordId: string): Promise<boolean> {
-  const item = await db.syncQueue
-    .where('status')
-    .anyOf('pending', 'syncing')
-    .filter((row) => row.table === table && row.recordId === recordId)
-    .first();
-  return item !== undefined;
-}
-
-/** Minimal sanity check before writing pulled JSON into IndexedDB. */
-function validatePulledRecord(rowId: string, data: unknown): boolean {
-  if (!data || typeof data !== 'object') return false;
-  const record = data as Record<string, unknown>;
-  if (typeof record.id === 'string' && record.id !== rowId) return false;
-  return true;
-}
-
-let authFailureNotified = false;
-let authRateLimitWarned = false;
-let cachedSyncUserId: string | null = null;
-let cachedSessionExpiresAtMs = 0;
-let lastAuthRefreshAt = 0;
-let authRateLimitedUntil = 0;
-let lastAutoSyncAt = 0;
-
-/** Clear cached auth after sign-out so the next sync does not reuse a stale user id. */
-export function clearSyncAuthCache(): void {
-  cachedSyncUserId = null;
-  cachedSessionExpiresAtMs = 0;
-  lastAuthRefreshAt = 0;
-  authRateLimitedUntil = 0;
-  authRateLimitWarned = false;
-}
-
-/**
- * Resolve the signed-in user id for sync.
- * Uses the local session by default; refreshSession only when the JWT is near expiry
- * or stale — never on every 10s sync tick (that triggers Supabase Auth rate limits).
- */
-async function resolveSyncUserId(options?: { forceRefresh?: boolean }): Promise<string | null> {
-  if (!supabase) return null;
-
-  const now = Date.now();
-
-  if (now < authRateLimitedUntil && cachedSyncUserId && cachedSessionExpiresAtMs > now) {
-    return cachedSyncUserId;
-  }
-
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData.session;
-  if (!session) {
-    cachedSyncUserId = null;
-    return null;
-  }
-
-  const expiresAtMs = (session.expires_at ?? 0) * 1000;
-  const sessionValid = expiresAtMs === 0 || expiresAtMs > now;
-  const expiresSoon = expiresAtMs > 0 && expiresAtMs < now + AUTH_EXPIRY_BUFFER_MS;
-  const refreshStale = now - lastAuthRefreshAt > AUTH_REFRESH_MIN_MS;
-  const shouldRefresh =
-    options?.forceRefresh === true ||
-    (sessionValid && expiresSoon) ||
-    (sessionValid && refreshStale && now >= authRateLimitedUntil);
-
-  if (shouldRefresh) {
-    lastAuthRefreshAt = now;
-    const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-    if (refreshErr) {
-      if (isRateLimitError(refreshErr)) {
-        authRateLimitedUntil = now + AUTH_RATE_LIMIT_BACKOFF_MS;
-        if (!authRateLimitWarned) {
-          authRateLimitWarned = true;
-          console.warn('[resolveSyncUserId] auth rate limited — using existing session until it expires');
-        }
-      } else if (refreshErr.name !== 'AuthSessionMissingError') {
-        console.warn('[resolveSyncUserId] refreshSession', refreshErr);
-      }
-    } else if (refreshed.session) {
-      authRateLimitedUntil = 0;
-      authRateLimitWarned = false;
-      authFailureNotified = false;
-      cachedSyncUserId = refreshed.session.user.id;
-      cachedSessionExpiresAtMs = (refreshed.session.expires_at ?? 0) * 1000;
-      return cachedSyncUserId;
-    }
-  }
-
-  if (!sessionValid) {
-    cachedSyncUserId = null;
-    const blocked = await db.syncQueue.where('status').anyOf('pending', 'failed').count();
-    if (blocked > 0 && !authFailureNotified) {
-      authFailureNotified = true;
-      useSyncStore.getState().setStatus('error');
-      toast.error('Cloud sync paused — sign in again in Settings to upload your data');
-    }
-    return null;
-  }
-
-  authFailureNotified = false;
-  cachedSyncUserId = session.user.id;
-  cachedSessionExpiresAtMs = expiresAtMs;
-  return cachedSyncUserId;
-}
-
-/**
- * Re-queue failed items for retry.
- * @param manual When true (Sync Now), retry all non-uuid failures. When false, skip permanent failures.
- */
-export async function requeueFailedSyncItems(manual = false): Promise<number> {
-  const failed = await db.syncQueue.where('status').equals('failed').toArray();
-  if (failed.length === 0) return 0;
-
-  let requeued = 0;
-  await db.transaction('rw', db.syncQueue, async () => {
-    for (const item of failed) {
-      if (!isValidSyncRecordId(item.recordId)) continue;
-      if (item.permanentFailure && !manual) continue;
-      await db.syncQueue.update(item.id, {
-        status: 'pending',
-        retryCount: 0,
-        permanentFailure: manual ? false : item.permanentFailure,
-        lastError: undefined,
-      });
-      requeued += 1;
-    }
-  });
-  return requeued;
-}
-
-/** Remove a permanently failed queue entry (data stays local only). */
-export async function dismissFailedSyncItem(queueId: string): Promise<void> {
-  await db.syncQueue.delete(queueId);
-}
-
-/** Keep only the newest queue entry per table+recordId. Deletes always win. */
-async function coalesceSyncQueue(): Promise<void> {
-  const items = await db.syncQueue
-    .where('status')
-    .anyOf('pending', 'failed', 'syncing')
-    .toArray();
-  if (items.length < 2) return;
-
-  const grouped = new Map<string, SyncQueueItem[]>();
-  for (const item of items) {
-    const key = `${item.table}:${item.recordId}`;
-    const group = grouped.get(key) ?? [];
-    group.push(item);
-    grouped.set(key, group);
-  }
-
-  const staleIds: string[] = [];
-  for (const group of grouped.values()) {
-    group.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    const hasDelete = group.some((item) => item.operation === 'delete');
-    const deletes = group.filter((item) => item.operation === 'delete');
-    const winner = hasDelete ? deletes[deletes.length - 1] : group[group.length - 1];
-    for (const item of group) {
-      if (item.id !== winner.id) staleIds.push(item.id);
-    }
-  }
-
-  if (staleIds.length === 0) return;
-  await db.transaction('rw', db.syncQueue, async () => {
-    for (const id of staleIds) await db.syncQueue.delete(id);
-  });
-}
-
-async function warnSyncQueueBacklog(): Promise<void> {
-  if (warnedQueueBacklog.value) return;
-  const count = await db.syncQueue
-    .where('status')
-    .anyOf('pending', 'failed', 'syncing')
-    .count();
-  if (count < SYNC_QUEUE_WARN_SIZE) return;
-  warnedQueueBacklog.value = true;
-  toast.info(
-    `Large sync backlog (${count} items) — connect to the internet and tap Sync Now in Settings to avoid storage limits.`,
-  );
-}
-
-/** Remove ancient permanent-failure queue rows so IndexedDB does not fill with dead retries. */
-async function purgeAbandonedFailedSync(): Promise<void> {
-  const cutoff = new Date(Date.now() - FAILED_SYNC_PURGE_DAYS * 86_400_000).toISOString();
-  const abandoned = await db.syncQueue
-    .where('status')
-    .equals('failed')
-    .filter(
-      (item) =>
-        item.timestamp < cutoff &&
-        (item.permanentFailure === true || item.retryCount >= MAX_RETRIES),
-    )
-    .toArray();
-  if (abandoned.length === 0) return;
-  await db.transaction('rw', db.syncQueue, async () => {
-    for (const item of abandoned) await db.syncQueue.delete(item.id);
-  });
-}
-
-async function freshQueuePayload(item: SyncQueueItem): Promise<unknown> {
-  if (item.operation === 'delete') return item.data;
-  const localTable = LOCAL_BY_REMOTE.get(item.table as RemoteSyncTable);
-  if (!localTable) return item.data;
-  const live = await db.table(localTable).get(item.recordId);
-  return live ?? item.data;
-}
-
-/**
- * Queue a record for background sync. Must be called INSIDE a Dexie
- * 'rw' transaction that already includes db.syncQueue.
- */
-export async function enqueueSync(
-  table: string,
-  operation: SyncQueueItem['operation'],
-  recordId: string,
-  data: unknown,
-): Promise<void> {
-  if (!isValidSyncRecordId(recordId)) {
-    console.error('[enqueueSync] Invalid recordId — not queued for Supabase:', table, recordId);
-    return;
-  }
-  const existing = await db.syncQueue
-    .where('status')
-    .anyOf('pending', 'failed', 'syncing')
-    .filter((row) => row.table === table && row.recordId === recordId)
-    .first();
-
-  if (existing) {
-    await db.syncQueue.update(existing.id, {
-      operation,
-      data,
-      timestamp: now(),
-      status: 'pending',
-      retryCount: 0,
-      permanentFailure: false,
-      lastError: undefined,
-    });
+  if (!navigator.onLine || state.phase === 'offline') {
+    useSyncStore.getState().setStatus('idle');
     return;
   }
 
-  const item: SyncQueueItem = {
-    id: uuid(),
-    table,
-    operation,
-    recordId,
-    data,
-    timestamp: now(),
-    retryCount: 0,
-    status: 'pending',
-  };
-  await db.syncQueue.add(item);
-}
-
-/** Schedule a background sync after the current Dexie write transaction commits. */
-export function requestSync(): void {
-  scheduleSyncSoon();
-}
-
-export async function pendingSyncCount(): Promise<number> {
-  return db.syncQueue.where('status').anyOf('pending', 'failed').count();
-}
-
-let running = false;
-
-/**
- * Drain the sync queue to Supabase. Safe no-op when Supabase is not
- * configured or the user is offline / unauthenticated.
- */
-export async function processSyncQueue(userId?: string | null): Promise<void> {
-  if (running) return;
-  if (!isSupabaseConfigured || !supabase) return;
-  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-
-  running = true;
-  try {
-    const uid = userId ?? (await resolveSyncUserId());
-    if (!uid) return;
-
-    await coalesceSyncQueue();
-    await purgeAbandonedFailedSync();
-    await warnSyncQueueBacklog();
-
-    let hadFailure = false;
-    while (!hadFailure) {
-      const pending = await db.syncQueue
-        .where('status')
-        .anyOf('pending', 'failed', 'syncing')
-        .sortBy('timestamp');
-      const batch = pending.slice(0, SYNC_BATCH_SIZE);
-      if (batch.length === 0) break;
-
-      let madeProgress = false;
-      for (const item of batch) {
-        if (item.status === 'syncing') {
-          await db.syncQueue.update(item.id, { status: 'pending' });
-        }
-        if (missingRemoteTables.has(item.table)) continue;
-
-        try {
-          await db.syncQueue.update(item.id, { status: 'syncing' });
-
-          if (item.operation === 'delete') {
-            // updated_at is set by the DB trigger; only mark the soft delete.
-            const { error } = await supabase
-              .from(item.table)
-              .update({ deleted_at: now() })
-              .eq('id', item.recordId);
-            if (error) throw error;
-          } else {
-            const payload = {
-              id: item.recordId,
-              user_id: uid,
-              data: await freshQueuePayload(item),
-            };
-            const { error } = await supabase.from(item.table).upsert(payload);
-            if (error) throw error;
-          }
-
-          await db.syncQueue.delete(item.id);
-          madeProgress = true;
-        } catch (err) {
-          const message = syncErrorMessage(err);
-          const kind = classifySyncError(err);
-
-          if (kind === 'rate_limit') {
-            await db.syncQueue.update(item.id, { status: 'pending', lastError: message });
-            toast.info('Cloud sync slowed — will retry shortly');
-            hadFailure = true;
-            break;
-          }
-
-          if (kind === 'auth') {
-            await db.syncQueue.update(item.id, {
-              status: 'pending',
-              lastError: message,
-            });
-            authFailureNotified = false;
-            clearSyncAuthCache();
-            hadFailure = true;
-            break;
-          }
-
-          if (kind === 'missing_table') {
-            warnMissingTableOnce(item.table);
-            await db.syncQueue.update(item.id, { status: 'pending', lastError: message });
-            hadFailure = true;
-            break;
-          }
-
-          if (kind === 'permanent' || isInvalidUuidSyncError(err)) {
-            console.warn('[processSyncQueue] Permanent failure:', item.table, item.recordId, message);
-            await db.syncQueue.update(item.id, {
-              status: 'failed',
-              retryCount: MAX_RETRIES,
-              permanentFailure: true,
-              lastError: message,
-            });
-            if (!warnedFailedSync.has(item.id)) {
-              warnedFailedSync.add(item.id);
-              toast.error(`Cloud sync blocked for ${item.table} — see Settings → Cloud Sync`);
-            }
-            madeProgress = true;
-            continue;
-          }
-
-          console.error('[processSyncQueue]', item.table, err);
-          const retryCount = item.retryCount + 1;
-          const status = retryCount >= MAX_RETRIES ? 'failed' : 'pending';
-          await db.syncQueue.update(item.id, {
-            status,
-            retryCount,
-            lastError: message,
-            permanentFailure: status === 'failed' ? false : undefined,
-          });
-          if (status === 'failed' && !warnedFailedSync.has(item.id)) {
-            warnedFailedSync.add(item.id);
-            toast.error(`Cloud sync failed for ${item.table} — tap Sync Now in Settings to retry`);
-          }
-          hadFailure = true;
-        }
-      }
-
-      // Avoid spinning forever when every item is skipped (missing table, etc.).
-      if (!madeProgress) break;
-    }
-
-    if (!hadFailure) {
-      await db.settings.update('singleton', { lastSyncAt: now() });
-    }
-  } finally {
-    running = false;
-  }
-}
-
-/** Dexie store name ↔ Supabase table name (canonical list in supabaseSchema.ts). */
-const SYNC_TABLES = SYNC_TABLE_MAP;
-
-interface MirrorRow {
-  id: string;
-  data: Record<string, unknown>;
-  updated_at: string;
-  deleted_at: string | null;
-}
-
-/** Never let cloud sync revert a locally voided journal entry back to posted. */
-function shouldApplyRemoteJournal(
-  local: { status?: string; updatedAt?: string; createdAt?: string } | undefined,
-  remote: { status?: string; updatedAt?: string; createdAt?: string },
-  remoteUpdatedAt: string,
-): boolean {
-  if (!local) return true;
-  if (local.status === 'void' && remote.status === 'posted') return false;
-  const localStamp = local.updatedAt ?? local.createdAt ?? '';
-  return remoteUpdatedAt >= localStamp;
-}
-
-let pulling = false;
-
-/**
- * Pull rows changed since the last watermark from Supabase into Dexie.
- * Merges last-write-wins by `updatedAt`, applies soft deletes, and never
- * enqueues sync entries (so it cannot loop with the push queue).
- *
- * Local-first: this runs in the background and never blocks the UI (which
- * always reads from Dexie). A FULL download happens only when there is no
- * watermark yet — i.e. a brand-new device that has never pulled. After that,
- * every pull is incremental (delta only). The server-clock `updated_at`
- * trigger keeps the watermark reliable across devices.
- */
-export async function pullFromSupabase(userId?: string | null): Promise<void> {
-  if (pulling) return;
-  if (!isSupabaseConfigured || !supabase) return;
-  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-
-  pulling = true;
-  try {
-    const uid = userId ?? (await resolveSyncUserId());
-    if (!uid) return;
-
-    const settings = await db.settings.get('singleton');
-    const globalSince = settings?.lastPullAt;
-    const pullByTable = { ...(settings?.lastPullAtByTable ?? {}) };
-    let globalWatermark = globalSince ?? '1970-01-01T00:00:00.000Z';
-    let settingsChanged = false;
-
-    for (const { local, remote } of SYNC_TABLES) {
-      if (missingRemoteTables.has(remote)) continue;
-
-      const table = db.table(local);
-      const since = pullByTable[remote] ?? globalSince;
-      const tableBaseline = since ?? '1970-01-01T00:00:00.000Z';
-      let maxAppliedAt = tableBaseline;
-      let tableOk = true;
-      let page = 0;
-
-      while (true) {
-        let query = supabase
-          .from(remote)
-          .select('id, data, updated_at, deleted_at')
-          .order('updated_at', { ascending: true });
-        // Incremental: only rows strictly newer than last watermark. First pull on
-        // this device uses tableBaseline (1970) so all cloud rows download once.
-        if (since) {
-          query = query.gt('updated_at', since);
-        } else {
-          query = query.gte('updated_at', tableBaseline);
-        }
-
-        const from = page * PULL_PAGE_SIZE;
-        const { data, error } = await query.range(from, from + PULL_PAGE_SIZE - 1);
-        if (error) {
-          tableOk = false;
-          if (isMissingTableError(error)) {
-            warnMissingTableOnce(remote);
-          } else {
-            console.error('[pullFromSupabase]', remote, error);
-          }
-          break;
-        }
-
-        const batch = (data ?? []) as MirrorRow[];
-        for (const row of batch) {
-          try {
-            if (row.deleted_at) {
-              if (await hasPendingLocalSync(remote, row.id)) continue;
-              await table.delete(row.id);
-              if (row.updated_at >= maxAppliedAt) maxAppliedAt = row.updated_at;
-              continue;
-            }
-
-            if (!validatePulledRecord(row.id, row.data)) {
-              console.error('[pullFromSupabase] invalid data', remote, row.id);
-              continue;
-            }
-
-            const record = row.data as Record<string, unknown> & {
-              updatedAt?: string;
-              createdAt?: string;
-              status?: string;
-            };
-            const localRec = (await table.get(row.id)) as
-              | { updatedAt?: string; createdAt?: string; status?: string }
-              | undefined;
-            const localStamp = localRec?.updatedAt ?? localRec?.createdAt ?? '';
-            const remoteStamp = row.updated_at;
-
-            const isJournal = local === 'journalEntries';
-            const applyJournal = isJournal
-              ? shouldApplyRemoteJournal(localRec, record, row.updated_at)
-              : true;
-
-            const pendingLocal = localRec ? await hasPendingLocalSync(remote, row.id) : false;
-
-            if (!pendingLocal && (!localRec || remoteStamp >= localStamp) && applyJournal) {
-              await table.put(record);
-              if (row.updated_at >= maxAppliedAt) maxAppliedAt = row.updated_at;
-            }
-          } catch (err) {
-            console.error('[pullFromSupabase] apply', remote, row.id, err);
-          }
-        }
-
-        if (batch.length < PULL_PAGE_SIZE) break;
-        page += 1;
-      }
-
-      // Advance watermark for successfully fetched rows even if some rows failed
-      // to apply — otherwise a single bad row forces a full re-download every sync.
-      if (tableOk && maxAppliedAt > tableBaseline) {
-        pullByTable[remote] = maxAppliedAt;
-        if (maxAppliedAt > globalWatermark) globalWatermark = maxAppliedAt;
-        settingsChanged = true;
-      }
-    }
-
-    if (settingsChanged) {
-      await db.settings.update('singleton', {
-        lastPullAt: globalWatermark,
-        lastPullAtByTable: pullByTable,
-      });
-    } else {
-      // Pull completed with no new rows — still record freshness for Settings UI.
-      await db.settings.update('singleton', { lastPullAt: now() });
-    }
-  } finally {
-    pulling = false;
-  }
-}
-
-/**
- * Bump this whenever a change requires all devices to re-pull from scratch
- * (e.g. the server-clock updated_at migration). On mismatch we clear the pull
- * watermark so the next sync does a full backfill.
- */
-const SYNC_RESET_TOKEN = '2026-07-01-server-clock';
-
-export async function ensureSyncReset(): Promise<void> {
-  const s = await db.settings.get('singleton');
-  if (s && s.syncResetToken !== SYNC_RESET_TOKEN) {
-    await db.settings.update('singleton', {
-      lastPullAt: undefined,
-      lastPullAtByTable: undefined,
-      syncResetToken: SYNC_RESET_TOKEN,
-    });
-  }
-}
-
-let runSyncInFlight: Promise<void> | null = null;
-let runSyncQueued = false;
-/** True when a user-initiated sync should drive the dashboard badge state. */
-let syncUiActive = false;
-
-async function finishSyncUiStatus(): Promise<void> {
-  const blocked = await pendingSyncCount();
-  useSyncStore.getState().setStatus(blocked > 0 ? 'error' : 'idle');
-}
-
-/** Push local queue, then pull remote changes (single-flight with coalescing). */
-export async function runSync(options?: { manualRetry?: boolean }): Promise<void> {
-  if (runSyncInFlight) {
-    if (options?.manualRetry) {
-      syncUiActive = true;
-      useSyncStore.getState().setStatus('syncing');
-    }
-    runSyncQueued = true;
-    return runSyncInFlight;
+  if (state.phase === 'error') {
+    useSyncStore.getState().setStatus('error');
+    return;
   }
 
-  syncUiActive = options?.manualRetry ?? false;
-  if (syncUiActive) useSyncStore.getState().setStatus('syncing');
-
-  const manualRetry = syncUiActive;
-
-  runSyncInFlight = (async () => {
-    do {
-      runSyncQueued = false;
-      let userId: string | null = null;
-      if (supabase) {
-        userId = await resolveSyncUserId();
-        if (userId) await refreshSupabaseSchema();
-      }
-      await requeueFailedSyncItems(manualRetry);
-      await processSyncQueue(userId);
-      await pullFromSupabase(userId);
-      try {
-        await postDueRecurringExpenses();
-      } catch (err) {
-        console.error('[postDueRecurringExpenses]', err);
-      }
-    } while (runSyncQueued);
-  })();
-
-  try {
-    await runSyncInFlight;
-  } finally {
-    if (syncUiActive) await finishSyncUiStatus();
-    syncUiActive = false;
-    runSyncInFlight = null;
-  }
+  useSyncStore.getState().setStatus(syncing ? 'syncing' : 'idle');
 }
 
-let intervalId: ReturnType<typeof setInterval> | null = null;
-let listenersAttached = false;
-let syncSoonTimer: ReturnType<typeof setTimeout> | null = null;
-let engineStarted = false;
-
-function triggerSync(options?: { manual?: boolean }): void {
-  const manual = options?.manual === true;
-  if (!manual) {
-    const now = Date.now();
-    if (now - lastAutoSyncAt < MIN_AUTO_SYNC_GAP_MS) return;
-    lastAutoSyncAt = now;
-  }
-  void runSync(manual ? { manualRetry: true } : undefined).catch((err) => {
-    console.error('[runSync]', err);
-  });
-}
-
-/** Debounced sync after a local write — waits for the Dexie tx to commit. */
-export function scheduleSyncSoon(delayMs = 2000): void {
-  if (syncSoonTimer !== null) clearTimeout(syncSoonTimer);
-  syncSoonTimer = setTimeout(() => {
-    syncSoonTimer = null;
-    triggerSync();
-  }, delayMs);
-}
-
-function handleOnline(): void {
-  triggerSync();
-}
-
-function handleFocus(): void {
-  triggerSync();
-}
-
-function handleVisibilityChange(): void {
-  if (document.visibilityState === 'visible') triggerSync();
-}
-
-/** Start periodic + event-driven sync. Idempotent. */
+/** Start Dexie Cloud sync observers. Idempotent. */
 export function startSyncEngine(): void {
-  if (!isSupabaseConfigured) return;
-  if (!engineStarted) {
-    engineStarted = true;
-    triggerSync();
+  configureDexieCloud();
+  if (!isDexieCloudConfigured) return;
+
+  if (!syncStateSub) {
+    syncStateSub = db.cloud.syncState.subscribe(() => {
+      applySyncState();
+    });
+    db.cloud.persistedSyncState.subscribe((persisted) => {
+      if (persisted?.timestamp) {
+        useSyncStore.getState().setLastSync(persisted.timestamp.toISOString());
+      }
+    });
   }
-  if (intervalId === null) {
-    intervalId = setInterval(() => triggerSync(), SYNC_INTERVAL_MS);
+
+  if (typeof window !== 'undefined' && !onlineHandler) {
+    onlineHandler = () => {
+      useSyncStore.getState().setOnline(navigator.onLine);
+      if (navigator.onLine) void syncNow();
+    };
+    window.addEventListener('online', onlineHandler);
+    window.addEventListener('offline', onlineHandler);
+    useSyncStore.getState().setOnline(navigator.onLine);
   }
-  if (typeof window !== 'undefined' && !listenersAttached) {
-    window.addEventListener('online', handleOnline);
-    // Sync-on-focus: catch up immediately when the user returns to the app
-    // (e.g. switches back from another device) without waiting for the timer.
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    listenersAttached = true;
+
+  applySyncState();
+}
+
+/** Tear down sync listeners (factory reset, tests). */
+export function stopSyncEngine(): void {
+  syncStateSub?.unsubscribe();
+  syncStateSub = null;
+  if (onlineHandler && typeof window !== 'undefined') {
+    window.removeEventListener('online', onlineHandler);
+    window.removeEventListener('offline', onlineHandler);
+    onlineHandler = null;
   }
 }
 
-export function stopSyncEngine(): void {
-  engineStarted = false;
-  if (syncSoonTimer !== null) {
-    clearTimeout(syncSoonTimer);
-    syncSoonTimer = null;
+/** Force a full sync cycle when online. */
+export async function syncNow(): Promise<void> {
+  if (!isDexieCloudConfigured) return;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  configureDexieCloud();
+  useSyncStore.getState().setStatus('syncing');
+  try {
+    await db.cloud.sync({ wait: true, purpose: 'push' });
+    await db.cloud.sync({ wait: true, purpose: 'pull' });
+    applySyncState();
+  } catch (err) {
+    console.error('[syncNow]', err);
+    useSyncStore.getState().setStatus('error');
+    throw err;
   }
-  if (intervalId !== null) {
-    clearInterval(intervalId);
-    intervalId = null;
-  }
-  if (typeof window !== 'undefined' && listenersAttached) {
-    window.removeEventListener('online', handleOnline);
-    window.removeEventListener('focus', handleFocus);
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
-    listenersAttached = false;
-  }
+}
+
+/** Manual retry alias used by Settings. */
+export async function runSync(): Promise<void> {
+  await syncNow();
+}
+
+/** Legacy hook — Dexie Cloud syncs writes automatically. */
+export function scheduleSyncSoon(): void {
+  /* no-op */
+}
+
+/** Legacy hook — Dexie Cloud syncs writes automatically. */
+export function requestSync(): void {
+  /* no-op */
+}
+
+/** @deprecated Dexie Cloud syncs automatically — kept for migration call sites. */
+export async function enqueueSync(
+  _table: string,
+  _operation: 'create' | 'update' | 'delete',
+  _recordId: string,
+  _data?: unknown,
+): Promise<void> {
+  /* no-op */
+}
+
+/** Always zero — Dexie Cloud has no outbound queue table. */
+export async function pendingSyncCount(): Promise<number> {
+  if (!isDexieCloudConfigured || !navigator.onLine) return 0;
+  const phase = db.cloud.syncState.value.phase;
+  return phase === 'not-in-sync' || phase === 'pushing' ? 1 : 0;
+}
+
+/** @deprecated Removed with Supabase sync queue. */
+export async function dismissFailedSyncItem(_id: string): Promise<void> {
+  /* no-op */
+}
+
+/** @deprecated Removed with Supabase pull watermarks. */
+export async function ensureSyncReset(): Promise<void> {
+  /* no-op */
 }

@@ -26,7 +26,7 @@ import {
   previewVoidReversalCleanup,
   repairVoidDoubleReversals,
 } from '@/lib/migrations/voidReversalCleanup';
-import { isSupabaseConfigured } from '@/lib/supabase';
+import { isDexieCloudConfigured } from '@/lib/cloud';
 import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 import { formatStorageBytes, getStorageEstimate, type StorageEstimate } from '@/lib/storageEstimate';
@@ -34,12 +34,11 @@ import { APP_VERSION } from '@/lib/version';
 
 export default function Settings() {
   const settings = useSettings();
-  const { activeUserId, userEmail, signIn, signUp, signOut } = useAuth();
+  const { activeUserId, userEmail, login, signOut } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingRestore, setPendingRestore] = useState<BackupFile | null>(null);
   const [businessName, setBusinessName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [repairBusy, setRepairBusy] = useState(false);
   const [orphanCount, setOrphanCount] = useState<number | null>(null);
@@ -62,18 +61,12 @@ export default function Settings() {
 
   if (!settings) return <LoadingSpinner />;
 
-  const doAuth = async (mode: 'in' | 'up') => {
+  const doLogin = async () => {
     setAuthBusy(true);
     try {
-      if (mode === 'in') await signIn(email, password);
-      else {
-        await signUp(email, password);
-        toast.info('Check your email to confirm, then sign in.');
-      }
-      if (mode === 'in') toast.success('Signed in — sync enabled');
-      setPassword('');
+      await login(email.trim() || undefined);
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Auth failed'));
+      toast.error(getErrorMessage(err, 'Sign in failed'));
     } finally {
       setAuthBusy(false);
     }
@@ -407,7 +400,7 @@ export default function Settings() {
             </div>
           </section>
 
-          {isSupabaseConfigured && (
+          {isDexieCloudConfigured && (
             <section>
               <h2 className="mb-2 text-xs uppercase tracking-wider text-muted">Cloud Account</h2>
               <div className="space-y-3 card">
@@ -416,13 +409,21 @@ export default function Settings() {
                     <p className="text-sm text-foreground">
                       Signed in as <span className="text-brand-light">{userEmail}</span>
                     </p>
+                    <p className="text-xs text-muted">
+                      Signing out clears this device and reloads empty books. Cloud data stays safe — sign in again
+                      to restore.
+                    </p>
                     <Button variant="secondary" onClick={() => void signOut()}>
                       Sign Out
                     </Button>
                   </>
                 ) : (
                   <>
-                    <Field label="Email">
+                    <p className="text-xs text-muted">
+                      Optional — use the app offline without an account. Sign in when you want cloud backup and
+                      multi-device sync. Dexie Cloud sends a one-time code to your email.
+                    </p>
+                    <Field label="Email (optional hint)">
                       <Input
                         type="email"
                         value={email}
@@ -431,28 +432,9 @@ export default function Settings() {
                         autoComplete="email"
                       />
                     </Field>
-                    <Field label="Password">
-                      <Input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        autoComplete="current-password"
-                      />
-                    </Field>
-                    <div className="flex gap-2">
-                      <Button className="flex-1" disabled={authBusy} onClick={() => void doAuth('in')}>
-                        Sign In
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        className="flex-1"
-                        disabled={authBusy}
-                        onClick={() => void doAuth('up')}
-                      >
-                        Sign Up
-                      </Button>
-                    </div>
+                    <Button className="w-full" disabled={authBusy} onClick={() => void doLogin()}>
+                      Sign In with Email
+                    </Button>
                   </>
                 )}
               </div>
@@ -502,7 +484,7 @@ export default function Settings() {
       <ConfirmDialog
         open={factoryOpen}
         title="Factory reset?"
-        message="A backup file will download automatically. Then every local and cloud record will be permanently deleted. This cannot be undone."
+        message="A backup file will download automatically. Then every local record will be permanently deleted. Cloud data is wiped when signed in and online. This cannot be undone."
         confirmLabel="Delete everything"
         danger
         requirePhrase="DELETE ALL"

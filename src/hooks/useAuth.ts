@@ -1,82 +1,62 @@
 import { useEffect } from 'react';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { pendingSyncCount, runSync, clearSyncAuthCache } from '@/lib/sync';
+import { db } from '@/lib/db';
+import { isDexieCloudConfigured, isCloudLoggedIn } from '@/lib/cloud';
+import { pendingSyncCount } from '@/lib/sync';
+import { seedDatabase } from '@/lib/seed';
 import { toast } from '@/store/useToast';
 import { useAppStore } from '@/store/useAppStore';
 
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOGIN_COOLDOWN_MS = 60_000;
-let loginAttempts = 0;
-let loginBlockedUntil = 0;
-
-/** Supabase auth state + actions. No-op friendly when Supabase is absent. */
+/** Dexie Cloud auth — OTP email login. App works offline without signing in. */
 export function useAuth() {
   const activeUserId = useAppStore((s) => s.activeUserId);
   const userEmail = useAppStore((s) => s.userEmail);
   const setUser = useAppStore((s) => s.setUser);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return;
-    let mounted = true;
+    if (!isDexieCloudConfigured) {
+      setUser(null, null);
+      return;
+    }
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      setUser(data.session?.user.id ?? null, data.session?.user.email ?? null);
-      if (data.session) void runSync();
-    });
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user.id ?? null, session?.user.email ?? null);
-      if (session) {
-        void runSync();
+    const applyUser = () => {
+      const user = db.cloud.currentUser.value;
+      if (user.isLoggedIn && user.userId) {
+        setUser(user.userId, user.email ?? null);
       } else {
-        clearSyncAuthCache();
+        setUser(null, null);
       }
-    });
-
-    return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
     };
+
+    applyUser();
+    const sub = db.cloud.currentUser.subscribe(applyUser);
+    return () => sub.unsubscribe();
   }, [setUser]);
 
-  const signIn = async (email: string, password: string) => {
-    if (!supabase) throw new Error('Cloud sync not configured');
-    const now = Date.now();
-    if (now < loginBlockedUntil) {
-      const seconds = Math.ceil((loginBlockedUntil - now) / 1000);
-      throw new Error(`Too many sign-in attempts — wait ${seconds}s and try again`);
-    }
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      loginAttempts += 1;
-      if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
-        loginBlockedUntil = Date.now() + LOGIN_COOLDOWN_MS;
-        loginAttempts = 0;
-      }
-      throw error;
-    }
-    loginAttempts = 0;
-    loginBlockedUntil = 0;
-  };
-
-  const signUp = async (email: string, password: string) => {
-    if (!supabase) throw new Error('Cloud sync not configured');
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
+  const login = async (email?: string) => {
+    if (!isDexieCloudConfigured) throw new Error('Cloud sync not configured');
+    await db.cloud.login(email ? { email, grant_type: 'otp' } : undefined);
+    toast.success('Signed in — cloud backup active');
   };
 
   const signOut = async () => {
-    if (!supabase) return;
+    if (!isDexieCloudConfigured || !isCloudLoggedIn()) return;
+
     const queued = await pendingSyncCount();
     if (queued > 0) {
-      toast.error(
-        `${queued} change(s) not yet in cloud — sign in again with the same account to resume sync`,
-      );
+      toast.error('Sync still in progress — wait for sync to finish before signing out');
+      return;
     }
-    await supabase.auth.signOut();
-    clearSyncAuthCache();
+
+    await db.cloud.logout({ force: true });
+    await seedDatabase();
+    toast.info('Signed out — local books reset. Sign in again to restore from cloud.');
   };
 
-  return { isSupabaseConfigured, activeUserId, userEmail, signIn, signUp, signOut };
+  return {
+    isCloudConfigured: isDexieCloudConfigured,
+    activeUserId,
+    userEmail,
+    login,
+    signOut,
+  };
 }

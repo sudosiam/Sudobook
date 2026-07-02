@@ -1,7 +1,5 @@
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useSyncStore } from '@/store/useSyncStore';
 import { useSync } from '@/hooks/useSync';
-import { db } from '@/lib/db';
 import { formatSyncAgo } from '@/lib/display';
 import { cn } from '@/lib/utils';
 
@@ -28,16 +26,16 @@ function dotClasses(state: SyncDotState): string {
 export function SyncBadge({ compact = false }: { compact?: boolean }) {
   const isOnline = useSyncStore((s) => s.isOnline);
   const status = useSyncStore((s) => s.status);
-  const { pendingCount, failedCount, syncNow, isSupabaseConfigured } = useSync();
-  const lastSyncAt = useLiveQuery(() => db.settings.get('singleton').then((s) => s?.lastSyncAt ?? null), []);
+  const lastSyncAt = useSyncStore((s) => s.lastSyncAt);
+  const { pendingCount, failedCount, syncNow, isCloudConfigured } = useSync();
   const syncedAgo = formatSyncAgo(lastSyncAt ?? undefined);
 
   let state: SyncDotState = 'synced';
   let label = syncedAgo ? `Synced ${syncedAgo}` : 'Synced';
 
-  if (!isSupabaseConfigured) {
+  if (!isCloudConfigured) {
     state = 'local';
-    label = 'Local only — cloud sync not configured';
+    label = 'Local only — cloud not configured';
   } else if (!isOnline) {
     state = 'offline';
     label = 'Offline';
@@ -46,18 +44,18 @@ export function SyncBadge({ compact = false }: { compact?: boolean }) {
     label = 'Syncing…';
   } else if (failedCount > 0) {
     state = 'failed';
-    label = `${failedCount} sync failure${failedCount === 1 ? '' : 's'} — tap to retry`;
+    label = 'Sync error — tap to retry';
   } else if (pendingCount > 0) {
     state = 'pending';
-    label = `${pendingCount} change${pendingCount === 1 ? '' : 's'} pending sync — tap to sync`;
+    label = 'Changes pending sync — tap to sync';
   }
 
   if (compact) {
     return (
       <button
         type="button"
-        onClick={() => isSupabaseConfigured && void syncNow()}
-        disabled={!isSupabaseConfigured}
+        onClick={() => isCloudConfigured && void syncNow()}
+        disabled={!isCloudConfigured}
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg active:bg-surface-hover disabled:opacity-60"
         aria-label={label}
         title={label}
@@ -70,8 +68,8 @@ export function SyncBadge({ compact = false }: { compact?: boolean }) {
   return (
     <button
       type="button"
-      onClick={() => isSupabaseConfigured && void syncNow()}
-      disabled={!isSupabaseConfigured}
+      onClick={() => isCloudConfigured && void syncNow()}
+      disabled={!isCloudConfigured}
       className="flex min-h-[32px] items-center gap-1.5 rounded-lg px-1.5 text-xs disabled:opacity-60"
       aria-label={label}
       title={label}

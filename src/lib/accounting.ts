@@ -1,5 +1,4 @@
 import { db, now, uuid, type JournalEntry, type JournalLine } from '@/lib/db';
-import { enqueueSync } from '@/lib/sync';
 import { bumpDashboardRevisionTx } from '@/lib/dashboardCache';
 import { typeForCode } from '@/lib/coa';
 
@@ -13,7 +12,7 @@ export interface NewJournalEntry {
   reversalOf?: string;
 }
 
-const JOURNAL_STORES = [db.journalEntries, db.syncQueue, db.settings] as const;
+const JOURNAL_STORES = [db.journalEntries, db.settings] as const;
 
 function assertBalanced(lines: JournalLine[]): void {
   if (lines.length < 2) {
@@ -84,7 +83,7 @@ function balancesFromMaps(
 
 /**
  * Post a journal entry — caller MUST already be inside a Dexie rw transaction
- * that includes journalEntries and syncQueue.
+ * that includes journalEntries.
  */
 export async function postJournalEntryTx(entry: NewJournalEntry): Promise<string> {
   assertBalanced(entry.lines);
@@ -99,7 +98,6 @@ export async function postJournalEntryTx(entry: NewJournalEntry): Promise<string
   };
 
   await db.journalEntries.add(record);
-  await enqueueSync('journal_entries', 'create', id, record);
   await bumpDashboardRevisionTx();
   return id;
 }
@@ -107,7 +105,7 @@ export async function postJournalEntryTx(entry: NewJournalEntry): Promise<string
 /**
  * Void a journal entry — marks it `void` so balance queries exclude it.
  * Caller MUST already be inside a Dexie rw transaction that includes
- * journalEntries and syncQueue. Do not post a mirror reversal: balances only
+ * journalEntries. Do not post a mirror reversal: balances only
  * sum `posted` entries, so a reversal plus void would double-apply the effect.
  */
 export async function voidJournalEntryTx(entryId: string, reason: string): Promise<string> {
@@ -117,8 +115,6 @@ export async function voidJournalEntryTx(entryId: string, reason: string): Promi
 
   const description = `${original.description} — Void: ${reason}`;
   await db.journalEntries.update(entryId, { status: 'void', description, updatedAt: now() });
-  const updated = await db.journalEntries.get(entryId);
-  if (updated) await enqueueSync('journal_entries', 'update', entryId, updated);
   await bumpDashboardRevisionTx();
   return entryId;
 }

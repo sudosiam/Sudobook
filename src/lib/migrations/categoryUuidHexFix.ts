@@ -3,8 +3,6 @@ import {
   DEFAULT_CATEGORIES,
   brokenCategoryUuid,
 } from '@/lib/categories';
-import { enqueueSync } from '@/lib/sync';
-import { isValidSyncRecordId } from '@/lib/syncIds';
 
 export const CATEGORY_UUID_HEX_MIGRATION = 'category-uuid-hex-v2';
 
@@ -15,7 +13,7 @@ export const CATEGORY_UUID_HEX_MIGRATION = 'category-uuid-hex-v2';
 export async function migrateCategoryUuidHexFix(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.productCategories, db.products, db.syncQueue],
+    [db.productCategories, db.products],
     async () => {
       for (const seed of DEFAULT_CATEGORIES) {
         const newId = seed.id;
@@ -38,7 +36,6 @@ export async function migrateCategoryUuidHexFix(): Promise<void> {
           for (const p of products) {
             const fixed = { ...p, category: newId, updatedAt: now() };
             await db.products.put(fixed);
-            await enqueueSync('products', 'update', fixed.id, fixed);
           }
         }
 
@@ -53,26 +50,6 @@ export async function migrateCategoryUuidHexFix(): Promise<void> {
           updatedAt: now(),
         };
         await db.productCategories.put(category);
-        await enqueueSync(
-          'product_categories',
-          existing ? 'update' : 'create',
-          newId,
-          category,
-        );
-      }
-
-      const catQueue = await db.syncQueue.filter((i) => i.table === 'product_categories').toArray();
-      for (const item of catQueue) {
-        if (!isValidSyncRecordId(item.recordId)) {
-          await db.syncQueue.delete(item.id);
-        } else if (item.status === 'failed' && item.permanentFailure) {
-          await db.syncQueue.update(item.id, {
-            status: 'pending',
-            retryCount: 0,
-            permanentFailure: false,
-            lastError: undefined,
-          });
-        }
       }
     },
   );

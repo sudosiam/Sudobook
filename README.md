@@ -1,6 +1,6 @@
 # Sudo Books
 
-**v3.0.0** — Local-first accounting & finance PWA for [Biswajit Power Hub](https://www.biswajitpowerhub.com) (EV showroom, Berhampore, West Bengal).
+**v4.0.0** — Local-first accounting & finance PWA for [Biswajit Power Hub](https://www.biswajitpowerhub.com) (EV showroom, Berhampore, West Bengal).
 
 Complete **double-entry bookkeeping**, inventory, banking, AR/AP, and financial reports for a **solo owner**. Indian Rupee (INR) only, April–March financial year, mobile-first Android PWA. **Not** an invoicing app. **No GST.**
 
@@ -31,7 +31,7 @@ Complete **double-entry bookkeeping**, inventory, banking, AR/AP, and financial 
 ┌─────────────────────────────────────────────────────────────┐
 │  React UI  →  Dexie (IndexedDB)  ←  source of truth       │
 │       ↑              ↓                                       │
-│  useLiveQuery    syncQueue  →  Supabase (optional backup)   │
+│  useLiveQuery    Dexie Cloud (optional backup + sync)       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -51,7 +51,7 @@ See [`.cursorrules`](.cursorrules) for full coding conventions.
 | UI | React 18, React Router 6, Tailwind CSS v4, Motion |
 | Forms | React Hook Form + Zod (with input sanitization) |
 | Local DB | Dexie 4 + dexie-react-hooks (schema **v5**) |
-| Cloud sync | Supabase v2 (optional) — JSONB mirror + RLS |
+| Cloud sync | Dexie Cloud (optional) — automatic offline-first sync |
 | State | Zustand (app, sync, toast, theme, period) |
 | Charts | Recharts |
 | Build | Vite 5 + vite-plugin-pwa |
@@ -68,15 +68,13 @@ npm run dev          # http://localhost:5173
 
 First launch seeds the chart of accounts, cash drawer, product categories, and settings. Data migrations run automatically (tracked in `settings.migrations`).
 
-### Optional: cloud sync (Supabase)
+### Optional: cloud backup (Dexie Cloud)
 
-1. Create a [Supabase](https://supabase.com) project and enable **Email** auth.
-2. Run SQL migrations in `supabase/migrations/` **in numeric order** (001 → 007).  
-   Skipped 006/007 before? Run [`supabase/migrations/RUN_ME_PENDING.sql`](supabase/migrations/RUN_ME_PENDING.sql) once.
-3. Copy [`.env.example`](.env.example) → `.env.local` and fill in URL + anon key.
-4. Restart dev server. Sign in under **Settings → Cloud Account**.
+1. Run `npx dexie-cloud create` and copy your database URL.
+2. Copy [`.env.example`](.env.example) → `.env.local` and set `VITE_DEXIE_CLOUD_URL`.
+3. Restart dev server. Sign in under **Settings → Cloud Account** (email OTP).
 
-Details: [`supabase/README.md`](supabase/README.md)
+Details: [`dexie-cloud/README.md`](dexie-cloud/README.md)
 
 ---
 

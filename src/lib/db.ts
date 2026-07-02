@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import dexieCloud from 'dexie-cloud-addon';
 import { generateUuid } from '@/lib/utils';
 import type { DashboardMetrics, MonthPoint, NetWorthPoint } from '@/lib/reports';
 
@@ -259,20 +260,6 @@ export interface StockMovement {
   syncedAt?: string;
 }
 
-export interface SyncQueueItem {
-  id: string; // UUID
-  table: string;
-  operation: 'create' | 'update' | 'delete';
-  recordId: string;
-  data: unknown;
-  timestamp: string;
-  retryCount: number;
-  status: 'pending' | 'syncing' | 'failed';
-  /** Set when the failure is not expected to succeed on retry (RLS, payload size, etc.). */
-  permanentFailure?: boolean;
-  lastError?: string;
-}
-
 export interface AppSettings {
   id: 'singleton';
   businessName: string;
@@ -281,9 +268,10 @@ export interface AppSettings {
   cashAccountId: string;
   defaultBankId: string;
   currency: 'INR';
+  /** Last successful Dexie Cloud sync (also mirrored in useSyncStore). */
   lastSyncAt?: string;
+  /** @deprecated Supabase pull watermark — unused after Dexie Cloud migration. */
   lastPullAt?: string;
-  /** Per Supabase mirror table — avoids one failed table blocking all pull progress. */
   lastPullAtByTable?: Record<string, string>;
   syncResetToken?: string;
   /** Short random per-device code (e.g. "A3") that makes document numbers collision-proof across devices. */
@@ -337,7 +325,6 @@ class SudoBooksDB extends Dexie {
   bankAccounts!: Table<BankAccount, string>;
   bankTransactions!: Table<BankTransaction, string>;
   stockMovements!: Table<StockMovement, string>;
-  syncQueue!: Table<SyncQueueItem, string>;
   settings!: Table<AppSettings, string>;
   backupSnapshots!: Table<BackupSnapshot, string>;
   dashboardCache!: Table<
@@ -353,7 +340,7 @@ class SudoBooksDB extends Dexie {
   >;
 
   constructor() {
-    super('SudoBooksDB');
+    super('SudoBooksDB', { addons: [dexieCloud] });
 
     // Schema versioning only — bump when stores/indexes change.
     // One-time data backfills run via `runMigrations()` in lib/migrations/runner.ts
@@ -444,6 +431,26 @@ class SudoBooksDB extends Dexie {
       bankTransactions: 'id, bankAccountId, date, type, linkedId',
       stockMovements: 'id, productId, date, type, linkedId',
       syncQueue: 'id, table, status, timestamp',
+      settings: 'id',
+      dashboardCache: 'id, updatedAt',
+      backupSnapshots: 'id, createdAt',
+    });
+
+    // v6 — Dexie Cloud: drop legacy Supabase syncQueue store.
+    this.version(6).stores({
+      accounts: 'id, code, type, parentCode, isActive',
+      journalEntries: 'id, date, entryType, status, linkedId',
+      customers: 'id, name, phone, isActive',
+      vendors: 'id, name, phone, isActive',
+      products: 'id, sku, category, isActive',
+      productCategories: 'id, name, isActive',
+      sales: 'id, saleNumber, date, customerId, status',
+      purchases: 'id, purchaseNumber, date, vendorId, status',
+      expenses: 'id, expenseNumber, date, accountCode',
+      recurringExpenses: 'id, isActive, dayOfMonth',
+      bankAccounts: 'id, name, accountId, isActive',
+      bankTransactions: 'id, bankAccountId, date, type, linkedId',
+      stockMovements: 'id, productId, date, type, linkedId',
       settings: 'id',
       dashboardCache: 'id, updatedAt',
       backupSnapshots: 'id, createdAt',

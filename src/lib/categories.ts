@@ -1,5 +1,4 @@
 import { db, now, uuid, type ProductCategory } from '@/lib/db';
-import { enqueueSync } from '@/lib/sync';
 
 export interface CategorySeed {
   id: string; // deterministic UUID — same on every device (Supabase requires uuid)
@@ -53,7 +52,7 @@ export const DEFAULT_CATEGORIES: CategorySeed[] = [
 
 /** Seed default categories that don't exist yet — safe to call repeatedly. */
 export async function syncDefaultCategories(): Promise<void> {
-  await db.transaction('rw', db.productCategories, db.syncQueue, async () => {
+  await db.transaction('rw', db.productCategories, async () => {
     for (const seed of DEFAULT_CATEGORIES) {
       const existing = await db.productCategories.get(seed.id);
       if (existing) continue;
@@ -70,7 +69,6 @@ export async function syncDefaultCategories(): Promise<void> {
         updatedAt: now(),
       };
       await db.productCategories.add(category);
-      await enqueueSync('product_categories', 'create', category.id, category);
     }
   });
 }
@@ -94,7 +92,7 @@ export async function createProductCategory(input: NewCategoryInput): Promise<st
   const skuPrefix = sanitizePrefix(input.skuPrefix || name);
 
   const id = uuid();
-  await db.transaction('rw', db.productCategories, db.syncQueue, async () => {
+  await db.transaction('rw', db.productCategories, async () => {
     const dupe = await db.productCategories
       .filter((c) => c.isActive && c.name.toLowerCase() === name.toLowerCase())
       .first();
@@ -110,7 +108,6 @@ export async function createProductCategory(input: NewCategoryInput): Promise<st
       updatedAt: now(),
     };
     await db.productCategories.add(category);
-    await enqueueSync('product_categories', 'create', id, category);
   });
   return id;
 }
@@ -119,12 +116,10 @@ export async function updateProductCategory(
   id: string,
   patch: Partial<Pick<ProductCategory, 'name' | 'skuPrefix' | 'isActive'>>,
 ): Promise<void> {
-  await db.transaction('rw', db.productCategories, db.syncQueue, async () => {
+  await db.transaction('rw', db.productCategories, async () => {
     const next: Partial<ProductCategory> = { ...patch, updatedAt: now() };
     if (patch.skuPrefix) next.skuPrefix = sanitizePrefix(patch.skuPrefix);
     await db.productCategories.update(id, next);
-    const updated = await db.productCategories.get(id);
-    if (updated) await enqueueSync('product_categories', 'update', id, updated);
   });
 }
 
@@ -141,14 +136,12 @@ export async function previewNextSku(categoryId: string): Promise<string> {
 
 /**
  * Atomically claim the next auto-SKU for a category. Caller MUST already be
- * inside a Dexie rw transaction that includes productCategories and syncQueue.
+ * inside a Dexie rw transaction that includes productCategories.
  */
 export async function claimNextSkuTx(categoryId: string): Promise<string> {
   const cat = await db.productCategories.get(categoryId);
   if (!cat) throw new Error('Category not found');
   const nextSeq = (cat.skuSeq ?? 0) + 1;
   await db.productCategories.update(categoryId, { skuSeq: nextSeq, updatedAt: now() });
-  const updated = await db.productCategories.get(categoryId);
-  if (updated) await enqueueSync('product_categories', 'update', categoryId, updated);
   return formatSku(cat.skuPrefix, nextSeq);
 }

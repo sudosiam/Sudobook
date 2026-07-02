@@ -1,6 +1,5 @@
 import { db, now, type Account, type BankAccount } from '@/lib/db';
 import { DEFAULT_ACCOUNTS, CODES, accountUuid, CASH_DRAWER_ID } from '@/lib/coa';
-import { enqueueSync } from '@/lib/sync';
 
 export const DET_IDS_MIGRATION = 'det-ids-v1';
 
@@ -20,7 +19,6 @@ export async function migrateDeterministicIds(): Promise<void> {
       db.expenses,
       db.bankTransactions,
       db.settings,
-      db.syncQueue,
     ],
     async () => {
       const accounts = await db.accounts.toArray();
@@ -30,7 +28,6 @@ export async function migrateDeterministicIds(): Promise<void> {
         await db.accounts.delete(acc.id);
         const fixed = { ...acc, id: canonical, updatedAt: now() };
         await db.accounts.put(fixed);
-        await enqueueSync('accounts', 'update', fixed.id, fixed);
       }
 
       const entries = await db.journalEntries.toArray();
@@ -44,7 +41,6 @@ export async function migrateDeterministicIds(): Promise<void> {
         if (changed) {
           const fixed = { ...e, lines, updatedAt: now() };
           await db.journalEntries.put(fixed);
-          await enqueueSync('journal_entries', 'update', fixed.id, fixed);
         }
       }
 
@@ -52,7 +48,7 @@ export async function migrateDeterministicIds(): Promise<void> {
       const cashDrawer = banks.find((b) => b.accountType === 'cash');
       if (cashDrawer && cashDrawer.id !== CASH_DRAWER_ID) {
         const oldId = cashDrawer.id;
-        const remap = async (local: string, remote: string) => {
+        const remap = async (local: string, _remote: string) => {
           const table = db.table(local);
           const all = (await table.toArray()) as Array<
             Record<string, unknown> & { id: string; bankAccountId?: string }
@@ -61,7 +57,6 @@ export async function migrateDeterministicIds(): Promise<void> {
             if (r.bankAccountId !== oldId) continue;
             const fixed = { ...r, bankAccountId: CASH_DRAWER_ID, updatedAt: now() };
             await table.put(fixed);
-            await enqueueSync(remote, 'update', fixed.id, fixed);
           }
         };
         await remap('sales', 'sales');
@@ -77,7 +72,6 @@ export async function migrateDeterministicIds(): Promise<void> {
           updatedAt: now(),
         };
         await db.bankAccounts.put(fixed);
-        await enqueueSync('bank_accounts', 'update', fixed.id, fixed);
 
         const s = await db.settings.get('singleton');
         if (s?.defaultBankId === oldId) {
@@ -94,7 +88,7 @@ export async function migrateDeterministicIds(): Promise<void> {
 
 /** Add any new default accounts missing from older installs (idempotent). */
 export async function syncMissingDefaultAccounts(): Promise<void> {
-  await db.transaction('rw', db.accounts, db.syncQueue, async () => {
+  await db.transaction('rw', db.accounts, async () => {
     for (const seed of DEFAULT_ACCOUNTS) {
       const already = await db.accounts.where('code').equals(seed.code).first();
       if (already) continue;
@@ -110,7 +104,6 @@ export async function syncMissingDefaultAccounts(): Promise<void> {
         updatedAt: now(),
       };
       await db.accounts.add(account);
-      await enqueueSync('accounts', 'create', account.id, account);
     }
   });
 }
