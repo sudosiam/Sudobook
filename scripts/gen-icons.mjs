@@ -1,4 +1,5 @@
-// Generates brand PNG icons for the PWA (no external deps).
+// Generates placeholder PNG icons for the PWA (no external deps).
+// Production icons are copied from appstore-images (android launchericon-*).
 import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

@@ -232,7 +232,10 @@ export function Sidebar() {
         animate={{ x: isMobile ? (sidebarOpen ? 0 : '-100%') : 0 }}
         transition={springSnappy}
         style={{ willChange: 'transform' }}
-        className="no-print fixed inset-y-0 left-0 z-[60] flex w-[15.5rem] flex-col border-r border-border-app/40 bg-app pt-safe shadow-xl md:static md:z-auto md:w-56 md:shadow-none"
+        className={cn(
+          'no-print fixed inset-y-0 left-0 z-[60] flex w-[15.5rem] flex-col border-r border-border-app/40 bg-app pt-safe shadow-xl md:static md:z-auto md:w-56 md:shadow-none',
+          isMobile && !sidebarOpen && 'pointer-events-none md:pointer-events-auto',
+        )}
         {...sidebarSwipe}
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border-app/40 px-3">

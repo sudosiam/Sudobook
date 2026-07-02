@@ -17,8 +17,8 @@ type MoreAction = {
 };
 
 const ACTIONS: MoreAction[] = [
-  { to: '/more/fixed-asset', title: 'Record Fixed Asset', icon: Building2 },
-  { to: '/more/loan', title: 'Loan', icon: Landmark },
+  { to: '/more/fixed-asset', title: 'Fixed Assets', icon: Building2 },
+  { to: '/more/loan', title: 'Loans', icon: Landmark },
   { to: '/more/credit-card', title: 'Credit Card', icon: CreditCard },
   { to: '/more/owner-capital', title: "Owner's Capital", icon: Wallet },
 ];

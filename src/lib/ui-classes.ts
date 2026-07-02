@@ -23,7 +23,7 @@ export const ui = {
   /** Page section heading */
   heading: 'text-sm font-semibold text-foreground',
   /** Fixed bottom-right FAB anchor — tokens in globals.css (--fab-bottom, --fab-right) */
-  fabAnchor: 'no-print fixed bottom-[var(--fab-bottom)] right-[var(--fab-right)] z-40',
+  fabAnchor: 'no-print fixed bottom-[var(--fab-bottom)] right-[var(--fab-right)] z-[80]',
   /** Primary FAB button (48×48) */
   fabButton:
     'flex h-12 w-12 min-h-[48px] min-w-[48px] items-center justify-center rounded-2xl bg-brand shadow-lg shadow-brand/30 transition-colors hover:bg-brand-hover',

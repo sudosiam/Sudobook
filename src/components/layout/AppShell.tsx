@@ -35,6 +35,17 @@ export function AppShell() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
+  useEffect(() => {
+    const blockContextMenu = (e: Event) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      e.preventDefault();
+    };
+    document.addEventListener('contextmenu', blockContextMenu);
+    return () => document.removeEventListener('contextmenu', blockContextMenu);
+  }, []);
+
   return (
     <div className="flex min-h-dvh min-w-0 overflow-x-hidden bg-app">
       <Sidebar />

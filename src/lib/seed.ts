@@ -1,34 +1,9 @@
 import { db, now, type Account, type AppSettings, type BankAccount } from '@/lib/db';
 import { DEFAULT_ACCOUNTS, CODES, accountUuid, CASH_DRAWER_ID } from '@/lib/coa';
-import { syncDefaultCategories, DEFAULT_CATEGORIES } from '@/lib/categories';
+import { syncDefaultCategories } from '@/lib/categories';
 import { getCurrentFY } from '@/lib/sequences';
 import { enqueueSync } from '@/lib/sync';
-import { invalidateCodeToIdMap } from '@/lib/transactions';
-import {
-  VOID_REVERSAL_CLEANUP_MIGRATION,
-  migrateVoidDoubleReversals,
-} from '@/lib/migrations/voidReversalCleanup';
-import {
-  CATEGORY_SLUG_MIGRATION,
-  migrateCategorySlugIds,
-} from '@/lib/migrations/categorySlugToUuid';
-import {
-  CATEGORY_UUID_HEX_MIGRATION,
-  migrateCategoryUuidHexFix,
-} from '@/lib/migrations/categoryUuidHexFix';
-import {
-  SCRUB_INVALID_SYNC_IDS_MIGRATION,
-  scrubInvalidSyncRecordIds,
-} from '@/lib/migrations/scrubInvalidSyncRecordIds';
-import { assertBuiltInSyncIds } from '@/lib/syncIds';
-import {
-  RETRY_FAILED_SYNC_MIGRATION,
-  retryFailedSyncQueue,
-} from '@/lib/migrations/retryFailedSyncQueue';
-import {
-  CLEAR_DEFAULT_BUSINESS_NAME_MIGRATION,
-  clearDefaultBusinessName,
-} from '@/lib/migrations/clearDefaultBusinessName';
+import { INITIAL_MIGRATION_TOKENS, runMigrations } from '@/lib/migrations/runner';
 
 /** Short random per-device code (e.g. "A3F9") keeps document numbers unique across devices. */
 function makeDeviceId(): string {
@@ -81,8 +56,6 @@ export async function seedDatabase(): Promise<void> {
 
       const cashAccountId = accountUuid(CODES.CASH);
 
-      // Cash drawer as a "bank account" of type cash — deterministic id so it
-      // is the same record on every device (referenced by sales/expenses/etc).
       let cashDrawer = await db.bankAccounts.get(CASH_DRAWER_ID);
       if (!cashDrawer) {
         cashDrawer = {
@@ -110,7 +83,7 @@ export async function seedDatabase(): Promise<void> {
         defaultBankId: cashDrawer.id,
         currency: 'INR',
         deviceId: makeDeviceId(),
-        migrations: ['det-ids-v1'],
+        migrations: [...INITIAL_MIGRATION_TOKENS],
         saleSequence: 0,
         purchaseSequence: 0,
         expenseSequence: 0,
@@ -123,190 +96,4 @@ export async function seedDatabase(): Promise<void> {
   await runMigrations();
 }
 
-/**
- * One-time migrations for devices seeded before deterministic ids existed.
- * Each migration is guarded by a token in settings.migrations so it runs once.
- */
-export async function runMigrations(): Promise<void> {
-  const settings = await db.settings.get('singleton');
-  if (!settings) return;
-  const done = new Set(settings.migrations ?? []);
-
-  if (!settings.deviceId) {
-    await db.settings.update('singleton', { deviceId: makeDeviceId() });
-  }
-
-  if (!done.has('det-ids-v1')) {
-    await migrateDeterministicIds();
-    const s = await db.settings.get('singleton');
-    const migrations = new Set(s?.migrations ?? []);
-    migrations.add('det-ids-v1');
-    await db.settings.update('singleton', { migrations: [...migrations] });
-  }
-
-  if (!done.has(VOID_REVERSAL_CLEANUP_MIGRATION)) {
-    await migrateVoidDoubleReversals();
-    const s = await db.settings.get('singleton');
-    const migrations = new Set(s?.migrations ?? []);
-    migrations.add(VOID_REVERSAL_CLEANUP_MIGRATION);
-    await db.settings.update('singleton', { migrations: [...migrations] });
-  }
-
-  if (!done.has(CATEGORY_SLUG_MIGRATION)) {
-    await migrateCategorySlugIds();
-  }
-
-  if (!done.has(CATEGORY_UUID_HEX_MIGRATION)) {
-    await migrateCategoryUuidHexFix();
-  }
-
-  if (!done.has(SCRUB_INVALID_SYNC_IDS_MIGRATION)) {
-    await scrubInvalidSyncRecordIds();
-  }
-
-  if (!done.has(RETRY_FAILED_SYNC_MIGRATION)) {
-    await retryFailedSyncQueue();
-    const s = await db.settings.get('singleton');
-    const migrations = new Set(s?.migrations ?? []);
-    migrations.add(RETRY_FAILED_SYNC_MIGRATION);
-    await db.settings.update('singleton', { migrations: [...migrations] });
-  }
-
-  if (!done.has(CLEAR_DEFAULT_BUSINESS_NAME_MIGRATION)) {
-    await clearDefaultBusinessName();
-    const s = await db.settings.get('singleton');
-    const migrations = new Set(s?.migrations ?? []);
-    migrations.add(CLEAR_DEFAULT_BUSINESS_NAME_MIGRATION);
-    await db.settings.update('singleton', { migrations: [...migrations] });
-  }
-
-  await syncMissingDefaultAccounts();
-  await syncDefaultCategories();
-  assertBuiltInSyncIds(
-    DEFAULT_ACCOUNTS.map((a) => accountUuid(a.code)),
-    'account',
-  );
-  assertBuiltInSyncIds(
-    DEFAULT_CATEGORIES.map((c) => c.id),
-    'product category',
-  );
-  assertBuiltInSyncIds([CASH_DRAWER_ID], 'cash drawer');
-  invalidateCodeToIdMap();
-}
-
-/** Add any new default accounts missing from older installs (idempotent). */
-async function syncMissingDefaultAccounts(): Promise<void> {
-  await db.transaction('rw', db.accounts, db.syncQueue, async () => {
-    for (const seed of DEFAULT_ACCOUNTS) {
-      const already = await db.accounts.where('code').equals(seed.code).first();
-      if (already) continue;
-      const account: Account = {
-        id: accountUuid(seed.code),
-        code: seed.code,
-        name: seed.name,
-        type: seed.type,
-        normalBalance: seed.normalBalance,
-        parentCode: seed.parentCode,
-        isActive: true,
-        createdAt: now(),
-        updatedAt: now(),
-      };
-      await db.accounts.add(account);
-      await enqueueSync('accounts', 'create', account.id, account);
-    }
-  });
-}
-
-/**
- * Re-key accounts and the cash drawer to deterministic ids and remap all
- * references, so this device matches every other device (and the cloud).
- */
-async function migrateDeterministicIds(): Promise<void> {
-  await db.transaction(
-    'rw',
-    [
-      db.accounts,
-      db.bankAccounts,
-      db.journalEntries,
-      db.sales,
-      db.purchases,
-      db.expenses,
-      db.bankTransactions,
-      db.settings,
-      db.syncQueue,
-    ],
-    async () => {
-      // 1. Accounts → deterministic ids keyed by code.
-      const accounts = await db.accounts.toArray();
-      for (const acc of accounts) {
-        const canonical = accountUuid(acc.code);
-        if (acc.id === canonical) continue;
-        await db.accounts.delete(acc.id);
-        const fixed = { ...acc, id: canonical, updatedAt: now() };
-        await db.accounts.put(fixed);
-        await enqueueSync('accounts', 'update', fixed.id, fixed);
-      }
-
-      // Journal line accountIds are cosmetic (reports key off accountCode), but
-      // realign them for cleanliness.
-      const entries = await db.journalEntries.toArray();
-      for (const e of entries) {
-        let changed = false;
-        const lines = e.lines.map((l) => {
-          const canonical = accountUuid(l.accountCode);
-          if (l.accountId !== canonical) changed = true;
-          return { ...l, accountId: canonical };
-        });
-        if (changed) {
-          const fixed = { ...e, lines, updatedAt: now() };
-          await db.journalEntries.put(fixed);
-          await enqueueSync('journal_entries', 'update', fixed.id, fixed);
-        }
-      }
-
-      // 2. Cash drawer → deterministic id, remap every reference to it.
-      // accountType isn't indexed, so scan (there are only a handful of banks).
-      const banks = await db.bankAccounts.toArray();
-      const cashDrawer = banks.find((b) => b.accountType === 'cash');
-      if (cashDrawer && cashDrawer.id !== CASH_DRAWER_ID) {
-        const oldId = cashDrawer.id;
-        const remap = async (local: string, remote: string) => {
-          const table = db.table(local);
-          // bankAccountId isn't indexed on most of these tables, so scan.
-          const all = (await table.toArray()) as Array<
-            Record<string, unknown> & { id: string; bankAccountId?: string }
-          >;
-          for (const r of all) {
-            if (r.bankAccountId !== oldId) continue;
-            const fixed = { ...r, bankAccountId: CASH_DRAWER_ID, updatedAt: now() };
-            await table.put(fixed);
-            await enqueueSync(remote, 'update', fixed.id, fixed);
-          }
-        };
-        await remap('sales', 'sales');
-        await remap('purchases', 'purchases');
-        await remap('expenses', 'expenses');
-        await remap('bankTransactions', 'bank_transactions');
-
-        await db.bankAccounts.delete(oldId);
-        const fixed: BankAccount = {
-          ...cashDrawer,
-          id: CASH_DRAWER_ID,
-          accountId: accountUuid(CODES.CASH),
-          updatedAt: now(),
-        };
-        await db.bankAccounts.put(fixed);
-        await enqueueSync('bank_accounts', 'update', fixed.id, fixed);
-
-        const s = await db.settings.get('singleton');
-        if (s?.defaultBankId === oldId) {
-          await db.settings.update('singleton', { defaultBankId: CASH_DRAWER_ID });
-        }
-      }
-
-      await db.settings.update('singleton', {
-        cashAccountId: accountUuid(CODES.CASH),
-      });
-    },
-  );
-}
+export { runMigrations } from '@/lib/migrations/runner';

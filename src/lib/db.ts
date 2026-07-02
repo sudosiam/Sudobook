@@ -317,6 +317,11 @@ class SudoBooksDB extends Dexie {
 
   constructor() {
     super('SudoBooksDB');
+
+    // Schema versioning only — bump when stores/indexes change.
+    // One-time data backfills run via `runMigrations()` in lib/migrations/runner.ts
+    // (tracked in settings.migrations), not Dexie `.upgrade()` hooks.
+
     this.version(1).stores({
       accounts: 'id, code, type, parentCode, isActive',
       journalEntries: 'id, date, entryType, status, linkedId',

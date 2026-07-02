@@ -14,13 +14,9 @@ const LEGACY_SLUGS = ['escooter', 'erickshaw', 'battery', 'part', 'other'] as co
  * queue rows that can never succeed.
  */
 export async function migrateCategorySlugIds(): Promise<void> {
-  const settings = await db.settings.get('singleton');
-  if (!settings) return;
-  if (settings.migrations?.includes(CATEGORY_SLUG_MIGRATION)) return;
-
   await db.transaction(
     'rw',
-    [db.productCategories, db.products, db.syncQueue, db.settings],
+    [db.productCategories, db.products, db.syncQueue],
     async () => {
       for (const seed of DEFAULT_CATEGORIES) {
         const newId = seed.id;
@@ -74,9 +70,6 @@ export async function migrateCategorySlugIds(): Promise<void> {
           await db.syncQueue.delete(item.id);
         }
       }
-
-      const migrations = [...(settings.migrations ?? []), CATEGORY_SLUG_MIGRATION];
-      await db.settings.update('singleton', { migrations });
     },
   );
 }

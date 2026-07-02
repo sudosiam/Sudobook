@@ -17,14 +17,7 @@ export const SCRUB_INVALID_SYNC_IDS_MIGRATION = 'scrub-invalid-sync-ids-v1';
  * and remap products still pointing at legacy slug / broken category ids.
  */
 export async function scrubInvalidSyncRecordIds(): Promise<void> {
-  const settings = await db.settings.get('singleton');
-  if (!settings) return;
-  if (settings.migrations?.includes(SCRUB_INVALID_SYNC_IDS_MIGRATION)) return;
-
-  await db.transaction(
-    'rw',
-    [db.products, db.syncQueue, db.settings],
-    async () => {
+  await db.transaction('rw', [db.products, db.syncQueue], async () => {
       const queue = await db.syncQueue.toArray();
       for (const item of queue) {
         if (!isValidSyncRecordId(item.recordId)) {
@@ -54,9 +47,5 @@ export async function scrubInvalidSyncRecordIds(): Promise<void> {
           await enqueueSync('products', 'update', fixed.id, fixed);
         }
       }
-
-      const migrations = [...(settings.migrations ?? []), SCRUB_INVALID_SYNC_IDS_MIGRATION];
-      await db.settings.update('singleton', { migrations });
-    },
-  );
+  });
 }

@@ -13,13 +13,9 @@ export const CATEGORY_UUID_HEX_MIGRATION = 'category-uuid-hex-v2';
  * rejects. Re-key defaults to fixed hex UUIDs and remap products + sync queue.
  */
 export async function migrateCategoryUuidHexFix(): Promise<void> {
-  const settings = await db.settings.get('singleton');
-  if (!settings) return;
-  if (settings.migrations?.includes(CATEGORY_UUID_HEX_MIGRATION)) return;
-
   await db.transaction(
     'rw',
-    [db.productCategories, db.products, db.syncQueue, db.settings],
+    [db.productCategories, db.products, db.syncQueue],
     async () => {
       for (const seed of DEFAULT_CATEGORIES) {
         const newId = seed.id;
@@ -78,9 +74,6 @@ export async function migrateCategoryUuidHexFix(): Promise<void> {
           });
         }
       }
-
-      const migrations = [...(settings.migrations ?? []), CATEGORY_UUID_HEX_MIGRATION];
-      await db.settings.update('singleton', { migrations });
     },
   );
 }

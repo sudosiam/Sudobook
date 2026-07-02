@@ -1143,6 +1143,104 @@ export async function recordCreditCardCharge(input: {
   return linkedId;
 }
 
+/** Void a capital/liability adjustment and reverse any linked bank movements. */
+export async function voidAdjustmentRecord(linkedId: string, reason = 'Removed'): Promise<void> {
+  assertDbWritable();
+  if (!linkedId) throw new Error('Missing record id');
+  await db.transaction(
+    'rw',
+    [db.bankTransactions, db.journalEntries, db.syncQueue],
+    async () => {
+      await reverseBankTxnsFor(linkedId);
+      await voidLinkedJournalEntries(linkedId, [], reason);
+    },
+  );
+  requestSync();
+}
+
+export async function updateFixedAssetPurchase(
+  linkedId: string,
+  input: Parameters<typeof recordFixedAssetPurchase>[0],
+): Promise<string> {
+  await voidAdjustmentRecord(linkedId, 'Corrected');
+  return recordFixedAssetPurchase(input);
+}
+
+export async function updateLoanMovement(
+  linkedId: string,
+  input: {
+    kind: 'receive' | 'repay';
+    date: string;
+    description: string;
+    amount: number; // paise
+    paidFrom: 'cash' | 'bank';
+    bankAccountId?: string;
+  },
+): Promise<string> {
+  await voidAdjustmentRecord(linkedId, 'Corrected');
+  const payload = {
+    date: input.date,
+    description: input.description,
+    amount: input.amount,
+    paidFrom: input.paidFrom,
+    bankAccountId: input.bankAccountId,
+  };
+  return input.kind === 'receive' ? recordLoanReceived(payload) : recordLoanRepayment(payload);
+}
+
+export async function updateOwnerCapitalMovement(
+  linkedId: string,
+  input: {
+    kind: 'contribution' | 'draw';
+    date: string;
+    description: string;
+    amount: number; // paise
+    paidFrom: 'cash' | 'bank';
+    bankAccountId?: string;
+  },
+): Promise<string> {
+  await voidAdjustmentRecord(linkedId, 'Corrected');
+  const payload = {
+    date: input.date,
+    description: input.description,
+    amount: input.amount,
+    paidFrom: input.paidFrom,
+    bankAccountId: input.bankAccountId,
+  };
+  return input.kind === 'contribution' ? recordOwnerContribution(payload) : recordOwnerDraw(payload);
+}
+
+export async function updateCreditCardEntry(
+  linkedId: string,
+  input: {
+    kind: 'payment' | 'charge';
+    date: string;
+    description: string;
+    amount: number; // paise
+    paidFrom?: 'cash' | 'bank';
+    bankAccountId?: string;
+    accountCode?: number;
+  },
+): Promise<string> {
+  await voidAdjustmentRecord(linkedId, 'Corrected');
+  if (input.kind === 'payment') {
+    return recordCreditCardPayment({
+      date: input.date,
+      description: input.description,
+      amount: input.amount,
+      paidFrom: input.paidFrom ?? 'bank',
+      bankAccountId: input.bankAccountId,
+    });
+  }
+  if (input.accountCode == null) throw new Error('Expense category required');
+  return recordCreditCardCharge({
+    date: input.date,
+    description: input.description,
+    amount: input.amount,
+    accountCode: input.accountCode,
+  });
+}
+
 /** Manual bank deposit or withdrawal not linked to a sale/purchase/expense document. */
 export async function recordManualBankEntry(input: {
   date: string;

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   Package,
@@ -53,14 +54,14 @@ export function FABMenu({ items }: { items: FABMenuItem[] }) {
     else setOpen(true);
   };
 
-  return (
+  const fab = (
     <>
       <AnimatePresence>
         {open && (
           <motion.button
             type="button"
             aria-label="Close add menu"
-            className="no-print fixed inset-0 z-30 bg-black/50 backdrop-blur-[2px]"
+            className="no-print fixed inset-0 z-[75] bg-black/50 backdrop-blur-[2px]"
             onClick={dismissMenu}
             initial="hidden"
             animate="visible"
@@ -70,7 +71,7 @@ export function FABMenu({ items }: { items: FABMenuItem[] }) {
         )}
       </AnimatePresence>
 
-      <div className={cn(ui.fabAnchor, 'flex flex-col items-end gap-2')}>
+      <div className={cn(ui.fabAnchor, 'flex flex-col items-end gap-2 touch-manipulation')}>
         <AnimatePresence>
           {open &&
             items.map((item, index) => (
@@ -104,11 +105,13 @@ export function FABMenu({ items }: { items: FABMenuItem[] }) {
           whileTap={{ scale: 0.9 }}
           animate={{ rotate: open ? 45 : 0 }}
           transition={springSnappy}
-          className={ui.fabButton}
+          className={cn(ui.fabButton, 'touch-manipulation')}
         >
           <Plus className="h-6 w-6 text-white" />
         </motion.button>
       </div>
     </>
   );
+
+  return typeof document !== 'undefined' ? createPortal(fab, document.body) : fab;
 }
