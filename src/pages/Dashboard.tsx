@@ -26,18 +26,18 @@ const ProfitTrendChart = lazy(async () => {
 });
 
 export default function Dashboard() {
-  const { metrics, series, netWorthSeries } = useFinancials();
+  const { metrics, series, netWorthSeries, isInitialLoad } = useFinancials();
   const currentFY = useAppStore((s) => s.currentFY);
   const { mode } = usePeriodStore();
   const lowStockCount = useLiveQuery(() => getLowStockCount(), [], 0);
 
-  const chartsLoading = series === undefined || netWorthSeries === undefined;
+  const showSkeleton = isInitialLoad && series.length === 0 && netWorthSeries.length === 0;
 
   return (
     <>
       <TopBar title="Sudo" right={<PeriodFilter placement="header" />} />
       <PageContainer>
-        {chartsLoading ? (
+        {showSkeleton ? (
           <div className="page-stack pb-1">
             <Skeleton className="h-24 rounded-2xl" />
             <SkeletonStatGrid count={8} />

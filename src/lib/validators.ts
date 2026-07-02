@@ -90,6 +90,7 @@ export const purchaseSchema = z
     vendorId: z.string().min(1, 'Select a vendor'),
     vendorName: z.string().min(1),
     items: z.array(purchaseItemSchema).min(1, 'Add at least one item'),
+    discount: paise,
     paymentMethod: z.enum(['cash', 'bank', 'upi', 'partial', 'credit']),
     bankAccountId: z.string().optional(),
     paidAmount: paise,
@@ -106,13 +107,30 @@ export const purchaseSchema = z
   .refine(
     (v) => {
       if (v.paymentMethod !== 'partial') return true;
-      const total = v.items.reduce((s, i) => s + i.total, 0);
+      const subtotal = v.items.reduce((s, i) => s + i.total, 0);
+      const total = Math.max(subtotal - v.discount, 0);
       return v.paidAmount < total;
     },
     { message: 'Partial payment must be less than the total', path: ['paidAmount'] },
   )
+  .refine(
+    (v) => {
+      const subtotal = v.items.reduce((s, i) => s + i.total, 0);
+      const total = Math.max(subtotal - v.discount, 0);
+      if (v.paymentMethod === 'partial') return v.paidAmount <= total;
+      return true;
+    },
+    { message: 'Paid amount cannot exceed total', path: ['paidAmount'] },
+  )
+  .refine(
+    (v) => {
+      const subtotal = v.items.reduce((s, i) => s + i.total, 0);
+      return v.discount <= subtotal;
+    },
+    { message: 'Discount cannot exceed subtotal', path: ['discount'] },
+  )
   .refine((v) => v.items.reduce((s, i) => s + i.total, 0) > 0, {
-    message: 'Purchase total must be greater than zero',
+    message: 'Add at least one item with a value',
     path: ['items'],
   });
 

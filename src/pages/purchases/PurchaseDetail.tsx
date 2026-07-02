@@ -133,6 +133,9 @@ export default function PurchaseDetail() {
             <h2 className="section-label mb-2">Summary</h2>
             <div className="card space-y-2 text-sm">
               <Row label="Subtotal" amount={purchase.subtotal} />
+              {(purchase.discount ?? 0) > 0 && (
+                <Row label="Discount" amount={purchase.discount ?? 0} />
+              )}
               <Row label="Total" amount={purchase.total} bold />
               <Row label="Paid" amount={purchase.paidAmount} />
               <Row label="Due" amount={purchase.dueAmount} tone={purchase.dueAmount > 0 ? docDueTone(purchase.status, purchase.paymentMethod) : 'neutral'} />

@@ -22,8 +22,11 @@ export { getSupabaseSchemaStatus, verifySupabaseSchema };
 const MAX_RETRIES = 3;
 const SYNC_BATCH_SIZE = 100;
 const PULL_PAGE_SIZE = 500;
+/** Warn once when the outbound sync backlog may threaten IndexedDB quota. */
+const SYNC_QUEUE_WARN_SIZE = 500;
 
 const warnedFailedSync = new Set<string>();
+const warnedQueueBacklog = { value: false };
 const LOCAL_BY_REMOTE = new Map(SYNC_TABLE_MAP.map((t) => [t.remote, t.local]));
 
 const warnedMissingTables = new Set<string>();
@@ -80,26 +83,33 @@ let authFailureNotified = false;
 /** Refresh session and resolve user id; notify when sync is blocked by auth. */
 async function resolveSyncUserId(): Promise<string | null> {
   if (!supabase) return null;
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) {
+    return null;
+  }
+
   const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-  if (refreshErr) {
+  if (refreshErr && refreshErr.name !== 'AuthSessionMissingError') {
     console.warn('[resolveSyncUserId] refreshSession', refreshErr);
   }
-  if (!refreshed.session) {
-    const { data: auth, error } = await supabase.auth.getUser();
-    if (error || !auth.user) {
-      const blocked = await db.syncQueue.where('status').anyOf('pending', 'failed').count();
-      if (blocked > 0 && !authFailureNotified) {
-        authFailureNotified = true;
-        useSyncStore.getState().setStatus('error');
-        toast.error('Cloud sync paused — sign in again in Settings to upload your data');
-      }
-      return null;
-    }
+  if (refreshed.session) {
     authFailureNotified = false;
-    return auth.user.id;
+    return refreshed.session.user.id;
+  }
+
+  const { data: auth, error } = await supabase.auth.getUser();
+  if (error || !auth.user) {
+    const blocked = await db.syncQueue.where('status').anyOf('pending', 'failed').count();
+    if (blocked > 0 && !authFailureNotified) {
+      authFailureNotified = true;
+      useSyncStore.getState().setStatus('error');
+      toast.error('Cloud sync paused — sign in again in Settings to upload your data');
+    }
+    return null;
   }
   authFailureNotified = false;
-  return refreshed.session.user.id;
+  return auth.user.id;
 }
 
 /**
@@ -132,7 +142,7 @@ export async function dismissFailedSyncItem(queueId: string): Promise<void> {
   await db.syncQueue.delete(queueId);
 }
 
-/** Keep only the newest queue entry per table+recordId. */
+/** Keep only the newest queue entry per table+recordId. Deletes always win. */
 async function coalesceSyncQueue(): Promise<void> {
   const items = await db.syncQueue
     .where('status')
@@ -140,20 +150,42 @@ async function coalesceSyncQueue(): Promise<void> {
     .toArray();
   if (items.length < 2) return;
 
-  const latest = new Map<string, SyncQueueItem>();
-  const staleIds: string[] = [];
-
-  for (const item of items.sort((a, b) => a.timestamp.localeCompare(b.timestamp))) {
+  const grouped = new Map<string, SyncQueueItem[]>();
+  for (const item of items) {
     const key = `${item.table}:${item.recordId}`;
-    const prev = latest.get(key);
-    if (prev) staleIds.push(prev.id);
-    latest.set(key, item);
+    const group = grouped.get(key) ?? [];
+    group.push(item);
+    grouped.set(key, group);
+  }
+
+  const staleIds: string[] = [];
+  for (const group of grouped.values()) {
+    group.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const hasDelete = group.some((item) => item.operation === 'delete');
+    const deletes = group.filter((item) => item.operation === 'delete');
+    const winner = hasDelete ? deletes[deletes.length - 1] : group[group.length - 1];
+    for (const item of group) {
+      if (item.id !== winner.id) staleIds.push(item.id);
+    }
   }
 
   if (staleIds.length === 0) return;
   await db.transaction('rw', db.syncQueue, async () => {
     for (const id of staleIds) await db.syncQueue.delete(id);
   });
+}
+
+async function warnSyncQueueBacklog(): Promise<void> {
+  if (warnedQueueBacklog.value) return;
+  const count = await db.syncQueue
+    .where('status')
+    .anyOf('pending', 'failed', 'syncing')
+    .count();
+  if (count < SYNC_QUEUE_WARN_SIZE) return;
+  warnedQueueBacklog.value = true;
+  toast.info(
+    `Large sync backlog (${count} items) — connect to the internet and tap Sync Now in Settings to avoid storage limits.`,
+  );
 }
 
 async function freshQueuePayload(item: SyncQueueItem): Promise<unknown> {
@@ -236,6 +268,7 @@ export async function processSyncQueue(): Promise<void> {
     if (!userId) return;
 
     await coalesceSyncQueue();
+    await warnSyncQueueBacklog();
 
     let hadFailure = false;
     while (!hadFailure) {
@@ -408,7 +441,6 @@ export async function pullFromSupabase(): Promise<void> {
       const tableBaseline = since ?? '1970-01-01T00:00:00.000Z';
       let maxAppliedAt = tableBaseline;
       let tableOk = true;
-      let applyErrors = false;
       let page = 0;
 
       while (true) {
@@ -416,7 +448,13 @@ export async function pullFromSupabase(): Promise<void> {
           .from(remote)
           .select('id, data, updated_at, deleted_at')
           .order('updated_at', { ascending: true });
-        if (since) query = query.gte('updated_at', since);
+        // Incremental: only rows strictly newer than last watermark. First pull on
+        // this device uses tableBaseline (1970) so all cloud rows download once.
+        if (since) {
+          query = query.gt('updated_at', since);
+        } else {
+          query = query.gte('updated_at', tableBaseline);
+        }
 
         const from = page * PULL_PAGE_SIZE;
         const { data, error } = await query.range(from, from + PULL_PAGE_SIZE - 1);
@@ -442,7 +480,6 @@ export async function pullFromSupabase(): Promise<void> {
 
             if (!validatePulledRecord(row.id, row.data)) {
               console.error('[pullFromSupabase] invalid data', remote, row.id);
-              applyErrors = true;
               continue;
             }
 
@@ -469,7 +506,6 @@ export async function pullFromSupabase(): Promise<void> {
               if (row.updated_at >= maxAppliedAt) maxAppliedAt = row.updated_at;
             }
           } catch (err) {
-            applyErrors = true;
             console.error('[pullFromSupabase] apply', remote, row.id, err);
           }
         }
@@ -478,7 +514,9 @@ export async function pullFromSupabase(): Promise<void> {
         page += 1;
       }
 
-      if (tableOk && !applyErrors && maxAppliedAt > tableBaseline) {
+      // Advance watermark for successfully fetched rows even if some rows failed
+      // to apply — otherwise a single bad row forces a full re-download every sync.
+      if (tableOk && maxAppliedAt > tableBaseline) {
         pullByTable[remote] = maxAppliedAt;
         if (maxAppliedAt > globalWatermark) globalWatermark = maxAppliedAt;
         settingsChanged = true;

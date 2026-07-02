@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { Download, Trash2, Upload, Wrench } from 'lucide-react';
 import { TopBar } from '@/components/layout/TopBar';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -12,6 +13,15 @@ import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/lib/db';
 import { downloadBackup, exportBackup, restoreBackup, type BackupFile } from '@/lib/backup';
 import { factoryReset } from '@/lib/factoryReset';
+import {
+  AUTO_BACKUP_INTERVALS,
+  deleteBackupSnapshot,
+  formatBackupTimestamp,
+  restoreBackupSnapshot,
+  runManualBackupWithArchive,
+  updateAutoBackupSettings,
+  type AutoBackupInterval,
+} from '@/lib/scheduledBackup';
 import {
   previewVoidReversalCleanup,
   repairVoidDoubleReversals,
@@ -33,6 +43,12 @@ export default function Settings() {
   const [repairBusy, setRepairBusy] = useState(false);
   const [orphanCount, setOrphanCount] = useState<number | null>(null);
   const [factoryOpen, setFactoryOpen] = useState(false);
+  const [pendingSnapshotId, setPendingSnapshotId] = useState<string | null>(null);
+
+  const localSnapshots = useLiveQuery(
+    () => db.backupSnapshots.orderBy('createdAt').reverse().limit(5).toArray(),
+    [],
+  );
 
   useEffect(() => {
     if (settings?.businessName) setBusinessName(settings.businessName);
@@ -68,6 +84,15 @@ export default function Settings() {
   };
 
   const handleExport = async () => {
+    try {
+      await runManualBackupWithArchive();
+      toast.success('Backup downloaded and saved on this device');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Export failed'));
+    }
+  };
+
+  const handleQuickExport = async () => {
     try {
       downloadBackup(await exportBackup());
       toast.success('Backup downloaded');
@@ -148,6 +173,27 @@ export default function Settings() {
     }
   };
 
+  const saveAutoBackup = async (
+    patch: Parameters<typeof updateAutoBackupSettings>[0],
+  ): Promise<void> => {
+    try {
+      await updateAutoBackupSettings(patch);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not save backup settings'));
+    }
+  };
+
+  const confirmSnapshotRestore = async () => {
+    if (!pendingSnapshotId) return;
+    try {
+      await restoreBackupSnapshot(pendingSnapshotId);
+      toast.success('Backup restored from on-device snapshot');
+      setPendingSnapshotId(null);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Restore failed'));
+    }
+  };
+
   return (
     <>
       <TopBar title="Settings" />
@@ -175,12 +221,80 @@ export default function Settings() {
 
           <section>
             <h2 className="mb-2 text-xs uppercase tracking-wider text-muted">Data Management</h2>
-            <div className="space-y-3 card">
-              <Button variant="secondary" onClick={handleExport}>
-                <Download className="h-4 w-4" /> Export Backup (JSON)
+            <div className="space-y-4 card">
+              <div className="space-y-3">
+                <label className="flex min-h-[48px] cursor-pointer items-center justify-between gap-3">
+                  <span className="text-sm text-foreground">Automatic backup</span>
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 accent-brand"
+                    checked={settings.autoBackupEnabled ?? false}
+                    onChange={(e) => void saveAutoBackup({ autoBackupEnabled: e.target.checked })}
+                  />
+                </label>
+                {settings.autoBackupEnabled && (
+                  <>
+                    <Field label="How often">
+                      <select
+                        className="min-h-[48px] w-full rounded-xl border border-border-app/60 bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-brand"
+                        value={String(settings.autoBackupIntervalDays ?? 7)}
+                        onChange={(e) =>
+                          void saveAutoBackup({
+                            autoBackupIntervalDays: Number(e.target.value) as AutoBackupInterval,
+                          })
+                        }
+                      >
+                        {AUTO_BACKUP_INTERVALS.map(({ days, label }) => (
+                          <option key={days} value={days}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <label className="flex min-h-[48px] cursor-pointer items-center justify-between gap-3">
+                      <span className="text-sm text-foreground">Download JSON file</span>
+                      <input
+                        type="checkbox"
+                        className="h-5 w-5 accent-brand"
+                        checked={settings.autoBackupDownload !== false}
+                        onChange={(e) =>
+                          void saveAutoBackup({ autoBackupDownload: e.target.checked })
+                        }
+                      />
+                    </label>
+                    <label className="flex min-h-[48px] cursor-pointer items-center justify-between gap-3">
+                      <span className="text-sm text-foreground">Keep copies on this device</span>
+                      <input
+                        type="checkbox"
+                        className="h-5 w-5 accent-brand"
+                        checked={settings.autoBackupStoreLocal !== false}
+                        onChange={(e) =>
+                          void saveAutoBackup({ autoBackupStoreLocal: e.target.checked })
+                        }
+                      />
+                    </label>
+                    <p className="text-xs text-muted">
+                      Last automatic backup:{' '}
+                      <span className="text-foreground">
+                        {formatBackupTimestamp(settings.lastAutoBackupAt)}
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted">
+                      Saves up to 5 rolling snapshots on this device. For phone resets or uninstall,
+                      also keep downloaded JSON files in Google Drive or email.
+                    </p>
+                  </>
+                )}
+              </div>
+
+              <Button variant="secondary" onClick={() => void handleExport()}>
+                <Download className="h-4 w-4" /> Backup now (download + save locally)
+              </Button>
+              <Button variant="secondary" onClick={() => void handleQuickExport()}>
+                <Download className="h-4 w-4" /> Download JSON only
               </Button>
               <Button variant="secondary" onClick={() => fileRef.current?.click()}>
-                <Upload className="h-4 w-4" /> Restore from Backup
+                <Upload className="h-4 w-4" /> Restore from file
               </Button>
               <input
                 ref={fileRef}
@@ -193,6 +307,46 @@ export default function Settings() {
                   e.target.value = '';
                 }}
               />
+
+              {(localSnapshots?.length ?? 0) > 0 && (
+                <div className="space-y-2 border-t border-border-app/60 pt-3">
+                  <p className="text-xs uppercase tracking-wider text-muted">On-device snapshots</p>
+                  <ul className="space-y-2">
+                    {(localSnapshots ?? []).map((snap) => (
+                      <li
+                        key={snap.id}
+                        className="flex min-h-[64px] items-center justify-between gap-2 rounded-xl border border-border-app/40 bg-app px-3 py-2"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-foreground">
+                            {snap.label === 'auto' ? 'Automatic' : 'Manual'} backup
+                          </p>
+                          <p className="text-xs text-muted">
+                            {formatBackupTimestamp(snap.createdAt)}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                          <Button
+                            variant="secondary"
+                            className="min-h-[40px] px-3 py-2 text-xs"
+                            onClick={() => setPendingSnapshotId(snap.id)}
+                          >
+                            Restore
+                          </Button>
+                          <button
+                            type="button"
+                            className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg text-muted active:bg-surface-hover"
+                            aria-label="Delete snapshot"
+                            onClick={() => void deleteBackupSnapshot(snap.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </section>
 
@@ -296,6 +450,16 @@ export default function Settings() {
           </p>
         </div>
       </PageContainer>
+
+      <ConfirmDialog
+        open={pendingSnapshotId !== null}
+        title="Restore on-device snapshot?"
+        message="This replaces ALL current data with the selected snapshot. This cannot be undone."
+        confirmLabel="Restore"
+        danger
+        onConfirm={confirmSnapshotRestore}
+        onCancel={() => setPendingSnapshotId(null)}
+      />
 
       <ConfirmDialog
         open={pendingRestore !== null}

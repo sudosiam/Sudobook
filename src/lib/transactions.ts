@@ -25,9 +25,8 @@ import {
   assertPositivePaise,
   resolveExpensePaymentBank,
 } from '@/lib/runtimeValidation';
-import {
-  nextDocumentNumberTx,
-} from '@/lib/sequences';
+import { effectivePurchaseUnitCost } from '@/lib/purchases';
+import { nextDocumentNumberTx } from '@/lib/sequences';
 
 /** Map every account code → its UUID (chart of accounts is small, cached in-memory). */
 let cachedCodeMap: Map<number, string> | null = null;
@@ -38,9 +37,17 @@ export function invalidateCodeToIdMap(): void {
 
 async function codeToIdMap(): Promise<Map<number, string>> {
   if (cachedCodeMap) return cachedCodeMap;
-  const accounts = await db.accounts.toArray();
+  let accounts = await db.accounts.toArray();
+  if (accounts.length === 0) {
+    const { ensureDefaultAccounts } = await import('@/lib/seed');
+    await ensureDefaultAccounts();
+    accounts = await db.accounts.toArray();
+  }
   const map = new Map<number, string>();
   for (const a of accounts) map.set(a.code, a.id);
+  if (map.size === 0) {
+    throw new Error('Chart of accounts is missing — reload the app or restore from backup.');
+  }
   cachedCodeMap = map;
   return map;
 }
@@ -180,7 +187,7 @@ export async function recordSale(input: RecordSaleInput): Promise<string> {
   const lineItems = input.items.map((item) => ({ ...item }));
   const subtotal = addMoney(...lineItems.map((i) => i.total));
   const total = Math.max(subtractMoney(subtotal, input.discount), 0);
-  if (total <= 0) throw new Error('Sale total must be greater than zero');
+  if (total < 0) throw new Error('Sale total cannot be negative');
   const paidAmount = Math.min(input.paidAmount, total);
   const dueAmount = subtractMoney(total, paidAmount);
 
@@ -223,13 +230,18 @@ export async function recordSale(input: RecordSaleInput): Promise<string> {
       }
 
       const revenueLines: JournalLine[] = [];
-      if (paidAmount > 0 && bank) {
-        revenueLines.push(line(map, bankCode(bank), paidAmount, 0, 'Cash/Bank received'));
+      if (total === 0) {
+        revenueLines.push(line(map, CODES.PRODUCT_SALES, 0, 0, 'Free sale'));
+        revenueLines.push(line(map, CODES.RECEIVABLE, 0, 0, 'No charge'));
+      } else {
+        if (paidAmount > 0 && bank) {
+          revenueLines.push(line(map, bankCode(bank), paidAmount, 0, 'Cash/Bank received'));
+        }
+        if (dueAmount > 0) {
+          revenueLines.push(line(map, CODES.RECEIVABLE, dueAmount, 0, 'On credit'));
+        }
+        revenueLines.push(line(map, CODES.PRODUCT_SALES, 0, total, 'Product sales'));
       }
-      if (dueAmount > 0) {
-        revenueLines.push(line(map, CODES.RECEIVABLE, dueAmount, 0, 'On credit'));
-      }
-      revenueLines.push(line(map, CODES.PRODUCT_SALES, 0, total, 'Product sales'));
 
       const status: Sale['status'] =
         dueAmount === 0 ? 'completed' : paidAmount > 0 ? 'partial' : 'credit';
@@ -285,14 +297,19 @@ export async function recordSale(input: RecordSaleInput): Promise<string> {
 
       for (const item of items) {
         const product = await db.products.get(item.productId);
-        if (product) {
-          const balanceAfter = await recordStockMovement(product.id, 'sale', -item.qty, {
-            date: input.date,
-            reference: saleNumber,
-            linkedId: saleId,
-          });
-          await updateProductStock(product.id, { stockQty: balanceAfter });
+        if (!product) throw new Error(`Product not found: ${item.productName}`);
+        const needed = qtyByProduct.get(item.productId) ?? item.qty;
+        if (product.stockQty < needed) {
+          throw new Error(
+            `Insufficient stock for ${product.name} (have ${product.stockQty}, need ${needed})`,
+          );
         }
+        const balanceAfter = await recordStockMovement(product.id, 'sale', -item.qty, {
+          date: input.date,
+          reference: saleNumber,
+          linkedId: saleId,
+        });
+        await updateProductStock(product.id, { stockQty: balanceAfter });
       }
 
       if (paidAmount > 0 && bank) {
@@ -422,6 +439,7 @@ export interface RecordPurchaseInput {
   vendorId: string;
   vendorName: string;
   items: PurchaseItem[];
+  discount: number; // paise
   paymentMethod: Purchase['paymentMethod'];
   bankAccountId?: string;
   paidAmount: number;
@@ -432,8 +450,8 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<string
   assertIsoDate(input.date);
   if (input.items.length === 0) throw new Error('At least one item required');
   const subtotal = addMoney(...input.items.map((i) => i.total));
-  const total = subtotal;
-  if (total <= 0) throw new Error('Purchase total must be greater than zero');
+  const total = Math.max(subtractMoney(subtotal, input.discount), 0);
+  if (subtotal <= 0) throw new Error('Purchase total must be greater than zero');
   const paidAmount = Math.min(input.paidAmount, total);
   const dueAmount = subtractMoney(total, paidAmount);
 
@@ -447,12 +465,18 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<string
     if (!bank) throw new Error('Payment account not found');
   }
 
-  const lines: JournalLine[] = [line(map, CODES.INVENTORY, total, 0, 'Inventory received')];
-  if (paidAmount > 0 && bank) {
-    lines.push(line(map, bankCode(bank), 0, paidAmount, 'Cash/Bank paid'));
-  }
-  if (dueAmount > 0) {
-    lines.push(line(map, CODES.PAYABLE, 0, dueAmount, 'On credit'));
+  const lines: JournalLine[] = [];
+  if (total === 0) {
+    lines.push(line(map, CODES.INVENTORY, 0, 0, 'Inventory received (no charge)'));
+    lines.push(line(map, CODES.PAYABLE, 0, 0, 'Vendor discount'));
+  } else {
+    lines.push(line(map, CODES.INVENTORY, total, 0, 'Inventory received'));
+    if (paidAmount > 0 && bank) {
+      lines.push(line(map, bankCode(bank), 0, paidAmount, 'Cash/Bank paid'));
+    }
+    if (dueAmount > 0) {
+      lines.push(line(map, CODES.PAYABLE, 0, dueAmount, 'On credit'));
+    }
   }
 
   const status: Purchase['status'] =
@@ -487,6 +511,7 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<string
         vendorName: input.vendorName,
         items: input.items,
         subtotal,
+        discount: input.discount,
         total,
         paidAmount,
         dueAmount,
@@ -515,7 +540,7 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<string
             product.stockQty,
             product.costPrice,
             item.qty,
-            item.unitCost,
+            effectivePurchaseUnitCost(item, subtotal, total),
           );
           await updateProductStock(product.id, { stockQty: balanceAfter, costPrice: newCost });
       }
@@ -628,13 +653,17 @@ export async function voidPurchase(purchaseId: string, reason: string): Promise<
           note: 'Purchase voided — stock removed',
         });
         const stockPatch: { stockQty: number; costPrice?: number } = { stockQty: balanceAfter };
-        // Only reverse WAC when the full purchase batch is still on hand (no intervening sales).
-        if (product.stockQty === item.qty) {
+        if (product.stockQty >= item.qty) {
+          const unitCost = effectivePurchaseUnitCost(
+            item,
+            purchase.subtotal,
+            purchase.total,
+          );
           stockPatch.costPrice = reverseWeightedAverageCost(
             product.stockQty,
             product.costPrice,
             item.qty,
-            item.unitCost,
+            unitCost,
           );
         }
         await updateProductStock(product.id, stockPatch);
@@ -680,6 +709,21 @@ export async function recordExpense(input: RecordExpenseInput): Promise<string> 
     'rw',
     [db.expenses, db.bankTransactions, db.journalEntries, db.syncQueue, db.settings],
     async () => {
+      if (input.recurringExpenseId) {
+        const monthPrefix = input.date.slice(0, 7);
+        const duplicate = await db.expenses
+          .filter(
+            (e) =>
+              e.recurringExpenseId === input.recurringExpenseId &&
+              !e.voidedAt &&
+              e.date.startsWith(monthPrefix),
+          )
+          .first();
+        if (duplicate) {
+          throw new Error('Recurring expense already posted for this month');
+        }
+      }
+
       const expenseNumber = await nextDocumentNumberTx('expenseSequence', 'EXP', input.date);
 
       const journalEntryId = await postJournalEntryTx({
@@ -775,22 +819,17 @@ export async function transferBetweenBanks(input: {
     'rw',
     [db.bankTransactions, db.journalEntries, db.syncQueue],
     async () => {
-      // If both post to the same COA code (e.g. two banks → 102), the journal
-      // nets to zero, which is invalid. Post only when codes differ; otherwise
-      // the transfer is purely operational (tracked via bank transactions).
-      let journalEntryId: string | undefined;
-      if (bankCode(from) !== bankCode(to)) {
-        journalEntryId = await postJournalEntryTx({
-          date: input.date,
-          reference,
-          description: input.note ?? `Transfer ${from.name} → ${to.name}`,
-          entryType: 'transfer',
-          lines: [
-            line(map, bankCode(to), input.amount, 0, `To ${to.name}`),
-            line(map, bankCode(from), 0, input.amount, `From ${from.name}`),
-          ],
-        });
-      }
+      // Always post a balanced journal entry (even when both banks share COA 102 — nets to zero).
+      const journalEntryId = await postJournalEntryTx({
+        date: input.date,
+        reference,
+        description: input.note ?? `Transfer ${from.name} → ${to.name}`,
+        entryType: 'transfer',
+        lines: [
+          line(map, bankCode(to), input.amount, 0, `To ${to.name}`),
+          line(map, bankCode(from), 0, input.amount, `From ${from.name}`),
+        ],
+      });
 
       await recordBankTxn(from, 'debit', input.amount, {
         date: input.date,
@@ -1374,6 +1413,19 @@ export async function recordManualBankEntry(input: {
   );
 }
 
+/** Drop void legs and bank rows that were reversed. */
+export function filterActiveBankTxns(txns: BankTransaction[]): BankTransaction[] {
+  const voidRefs = new Set(
+    txns.filter((t) => t.reference.startsWith('VOID-')).map((t) => t.reference),
+  );
+  return txns.filter((t) => {
+    if (t.reference.startsWith('VOID-')) return false;
+    if (voidRefs.has(`VOID-${t.id.slice(0, 8).toUpperCase()}`)) return false;
+    if (voidRefs.has(`VOID-${t.reference}`)) return false;
+    return true;
+  });
+}
+
 /** Unique reversal reference for a single bank transaction row. */
 function voidRefFor(txn: BankTransaction): string {
   return `VOID-${txn.id.slice(0, 8).toUpperCase()}`;
@@ -1559,6 +1611,9 @@ export async function voidBankTransaction(txnId: string, reason: string): Promis
 
       const recheck = await getBankTxnVoidEligibility(current);
       if (!recheck.canVoid) throw new Error(recheck.message);
+      if (await isBankTxnReversed(current)) {
+        throw new Error('This transaction has already been reversed.');
+      }
 
       if (current.category === 'transfer') {
         await voidBankTransferByReference(current.reference, trimmed);

@@ -14,7 +14,7 @@ import { DraftBanner } from '@/components/common/DraftBanner';
 import { db, activeWhere } from '@/lib/db';
 import { purchaseSchema, type PurchaseFormData } from '@/lib/validators';
 import { recordPurchase } from '@/lib/transactions';
-import { addMoney, multiplyMoney } from '@/lib/money';
+import { addMoney, multiplyMoney, subtractMoney } from '@/lib/money';
 import { getErrorMessage } from '@/lib/errors';
 import { useDraft, type DraftEnvelope } from '@/hooks/useDraft';
 import { toast } from '@/store/useToast';
@@ -45,6 +45,7 @@ export default function NewPurchase() {
       vendorId: '',
       vendorName: '',
       items: [],
+      discount: 0,
       paymentMethod: 'cash',
       paidAmount: 0,
     },
@@ -65,12 +66,20 @@ export default function NewPurchase() {
 
   const { fields, append, remove } = useFieldArray({ control, name: 'items' });
   const items = watch('items');
+  const discount = watch('discount');
   const paymentMethod = watch('paymentMethod');
   const subtotal = addMoney(
     ...(items ?? []).map(
       (i) => i.total || multiplyMoney(i.unitCost || 0, i.qty || 0),
     ),
   );
+  const total = Math.max(subtractMoney(subtotal, discount || 0), 0);
+
+  useEffect(() => {
+    if ((discount ?? 0) > subtotal) {
+      setValue('discount', subtotal, { shouldValidate: true });
+    }
+  }, [discount, subtotal, setValue]);
 
   const addItem = () => {
     const p = productList[0];
@@ -85,18 +94,20 @@ export default function NewPurchase() {
 
   const onSubmit = async (data: PurchaseFormData) => {
     try {
-      const total = addMoney(...data.items.map((i) => i.total));
+      const lineSubtotal = addMoney(...data.items.map((i) => i.total));
+      const invoiceTotal = Math.max(subtractMoney(lineSubtotal, data.discount), 0);
       const paidAmount =
         data.paymentMethod === 'credit'
           ? 0
           : data.paymentMethod === 'partial'
             ? data.paidAmount
-            : total;
+            : invoiceTotal;
       const id = await recordPurchase({
         date: data.date,
         vendorId: data.vendorId,
         vendorName: data.vendorName,
         items: data.items,
+        discount: data.discount,
         paymentMethod: data.paymentMethod,
         bankAccountId: data.bankAccountId || undefined,
         paidAmount,
@@ -228,9 +239,18 @@ export default function NewPurchase() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between card text-base font-semibold">
-            <span className="text-foreground">Total</span>
-            <MoneyDisplay amount={subtotal} tone="expense" />
+          <div className="space-y-3 card">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted">Subtotal</span>
+              <MoneyDisplay amount={subtotal} />
+            </div>
+            <Field label="Discount" error={errors.discount?.message}>
+              <MoneyInput value={discount} onChange={(v) => setValue('discount', v)} />
+            </Field>
+            <div className="flex items-center justify-between border-t border-border-app pt-3 text-base font-semibold">
+              <span className="text-foreground">Total</span>
+              <MoneyDisplay amount={total} tone="expense" />
+            </div>
           </div>
 
           <Field label="Payment Method" error={errors.paymentMethod?.message}>

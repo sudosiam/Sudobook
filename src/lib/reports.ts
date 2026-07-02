@@ -1,5 +1,6 @@
 import { db, activeWhere } from '@/lib/db';
 import { foldPostedJournalLines, getAllBalances, getPeriodBalances, getRangeBalance } from '@/lib/accounting';
+import { filterActiveBankTxns } from '@/lib/transactions';
 import { CODES } from '@/lib/coa';
 import { addMoney, multiplyMoney, subtractMoney } from '@/lib/money';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
@@ -440,14 +441,6 @@ export async function getCustomerBalance(customerId: string): Promise<number> {
   let balance = customer.openingBalance;
   const sales = await db.sales.where('customerId').equals(customerId).toArray();
   balance = addMoney(balance, ...sales.filter((s) => s.status !== 'void').map((s) => s.dueAmount));
-
-  const linkedJes = await db.journalEntries.where('linkedId').equals(customerId).toArray();
-  for (const je of linkedJes) {
-    if (je.status !== 'posted' || je.entryType === 'opening') continue;
-    for (const l of je.lines) {
-      if (l.accountCode === CODES.RECEIVABLE) balance += l.debit - l.credit;
-    }
-  }
   return balance;
 }
 
@@ -458,21 +451,15 @@ export async function getVendorBalance(vendorId: string): Promise<number> {
   let balance = vendor.openingBalance;
   const purchases = await db.purchases.where('vendorId').equals(vendorId).toArray();
   balance = addMoney(balance, ...purchases.filter((p) => p.status !== 'void').map((p) => p.dueAmount));
-
-  const linkedJes = await db.journalEntries.where('linkedId').equals(vendorId).toArray();
-  for (const je of linkedJes) {
-    if (je.status !== 'posted' || je.entryType === 'opening') continue;
-    for (const l of je.lines) {
-      if (l.accountCode === CODES.PAYABLE) balance += l.credit - l.debit;
-    }
-  }
   return balance;
 }
 
 export async function getBankBalance(bankAccountId: string): Promise<number> {
   const bank = await db.bankAccounts.get(bankAccountId);
   if (!bank) return 0;
-  const txns = await db.bankTransactions.where('bankAccountId').equals(bankAccountId).toArray();
+  const txns = filterActiveBankTxns(
+    await db.bankTransactions.where('bankAccountId').equals(bankAccountId).toArray(),
+  );
   let balance = bank.openingBalance;
   for (const t of txns) balance += t.type === 'credit' ? t.amount : -t.amount;
   return balance;
@@ -495,7 +482,9 @@ export async function getBankTransactionsWithBalance(
   const bank = await db.bankAccounts.get(bankAccountId);
   if (!bank) return [];
 
-  const txns = await db.bankTransactions.where('bankAccountId').equals(bankAccountId).toArray();
+  const txns = filterActiveBankTxns(
+    await db.bankTransactions.where('bankAccountId').equals(bankAccountId).toArray(),
+  );
   const sorted = [...txns].sort((a, b) => {
     const byDate = a.date.localeCompare(b.date);
     if (byDate !== 0) return byDate;
@@ -650,6 +639,7 @@ export interface SalesReportSummary {
 export interface PurchaseReportSummary {
   count: number;
   subtotal: number; // paise
+  discount: number; // paise
   total: number; // paise
   paid: number; // paise
   due: number; // paise
@@ -755,6 +745,7 @@ export async function getPurchaseReport(start: string, end: string): Promise<Pur
   return {
     count: purchases.length,
     subtotal: addMoney(...purchases.map((p) => p.subtotal)),
+    discount: addMoney(...purchases.map((p) => p.discount ?? 0)),
     total: addMoney(...purchases.map((p) => p.total)),
     paid: addMoney(...purchases.map((p) => p.paidAmount)),
     due: addMoney(...purchases.map((p) => p.dueAmount)),

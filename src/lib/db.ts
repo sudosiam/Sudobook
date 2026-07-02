@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import { generateUuid } from '@/lib/utils';
+import type { DashboardMetrics, MonthPoint, NetWorthPoint } from '@/lib/reports';
 
 // ─── CORE TYPES ───────────────────────────────────────────────
 
@@ -160,6 +161,7 @@ export interface Purchase {
   vendorName: string;
   items: PurchaseItem[];
   subtotal: number; // paise
+  discount: number; // paise
   total: number; // paise
   paidAmount: number; // paise
   dueAmount: number; // paise
@@ -293,10 +295,32 @@ export interface AppSettings {
   expenseSequence: number;
   /** FY start year the sequence counters currently belong to (for annual reset). */
   sequenceFY?: number;
+  /** Bumped on every journal post/void — invalidates dashboard cache. */
+  dashboardRevision?: number;
+  /** Automatic JSON backup — see lib/scheduledBackup.ts */
+  autoBackupEnabled?: boolean;
+  autoBackupIntervalDays?: 1 | 7 | 30;
+  /** ISO timestamp of the last automatic backup run. */
+  lastAutoBackupAt?: string;
+  /** Download a .json file when an automatic backup runs (default true). */
+  autoBackupDownload?: boolean;
+  /** Keep rolling snapshots in IndexedDB for quick restore (default true). */
+  autoBackupStoreLocal?: boolean;
   seeded: boolean;
 }
 
-// ─── DEXIE DB CLASS ───────────────────────────────────────────
+/** Rolling on-device backup for quick restore (full JSON payload). */
+export interface BackupSnapshot {
+  id: string;
+  createdAt: string;
+  label: 'auto' | 'manual';
+  file: {
+    app: 'sudo-books';
+    version: 1;
+    exportedAt: string;
+    data: Record<string, unknown[]>;
+  };
+}
 
 class SudoBooksDB extends Dexie {
   accounts!: Table<Account, string>;
@@ -314,6 +338,18 @@ class SudoBooksDB extends Dexie {
   stockMovements!: Table<StockMovement, string>;
   syncQueue!: Table<SyncQueueItem, string>;
   settings!: Table<AppSettings, string>;
+  backupSnapshots!: Table<BackupSnapshot, string>;
+  dashboardCache!: Table<
+    {
+      id: string;
+      metrics: DashboardMetrics;
+      monthlySeries: MonthPoint[];
+      netWorthSeries: NetWorthPoint[];
+      dashboardRevision: number;
+      updatedAt: string;
+    },
+    string
+  >;
 
   constructor() {
     super('SudoBooksDB');
@@ -371,6 +407,45 @@ class SudoBooksDB extends Dexie {
       stockMovements: 'id, productId, date, type, linkedId',
       syncQueue: 'id, table, status, timestamp',
       settings: 'id',
+    });
+
+    this.version(4).stores({
+      accounts: 'id, code, type, parentCode, isActive',
+      journalEntries: 'id, date, entryType, status, linkedId',
+      customers: 'id, name, phone, isActive',
+      vendors: 'id, name, phone, isActive',
+      products: 'id, sku, category, isActive',
+      productCategories: 'id, name, isActive',
+      sales: 'id, saleNumber, date, customerId, status',
+      purchases: 'id, purchaseNumber, date, vendorId, status',
+      expenses: 'id, expenseNumber, date, accountCode',
+      recurringExpenses: 'id, isActive, dayOfMonth',
+      bankAccounts: 'id, name, accountId, isActive',
+      bankTransactions: 'id, bankAccountId, date, type, linkedId',
+      stockMovements: 'id, productId, date, type, linkedId',
+      syncQueue: 'id, table, status, timestamp',
+      settings: 'id',
+      dashboardCache: 'id, updatedAt',
+    });
+
+    this.version(5).stores({
+      accounts: 'id, code, type, parentCode, isActive',
+      journalEntries: 'id, date, entryType, status, linkedId',
+      customers: 'id, name, phone, isActive',
+      vendors: 'id, name, phone, isActive',
+      products: 'id, sku, category, isActive',
+      productCategories: 'id, name, isActive',
+      sales: 'id, saleNumber, date, customerId, status',
+      purchases: 'id, purchaseNumber, date, vendorId, status',
+      expenses: 'id, expenseNumber, date, accountCode',
+      recurringExpenses: 'id, isActive, dayOfMonth',
+      bankAccounts: 'id, name, accountId, isActive',
+      bankTransactions: 'id, bankAccountId, date, type, linkedId',
+      stockMovements: 'id, productId, date, type, linkedId',
+      syncQueue: 'id, table, status, timestamp',
+      settings: 'id',
+      dashboardCache: 'id, updatedAt',
+      backupSnapshots: 'id, createdAt',
     });
   }
 }

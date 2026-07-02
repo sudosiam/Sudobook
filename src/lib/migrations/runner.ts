@@ -6,10 +6,10 @@ import { assertBuiltInSyncIds } from '@/lib/syncIds';
 import { DET_IDS_MIGRATION, syncMissingDefaultAccounts } from '@/lib/migrations/deterministicIds';
 import { DATA_MIGRATIONS } from '@/lib/migrations/registry';
 
-/** Short random per-device code (e.g. "A3F9") keeps document numbers unique across devices. */
+/** Short random per-device code (e.g. "A3F9K2") keeps document numbers unique across devices. */
 function makeDeviceId(): string {
-  const n = Math.floor(Math.random() * 36 ** 4);
-  return n.toString(36).padStart(4, '0').toUpperCase();
+  const n = Math.floor(Math.random() * 36 ** 6);
+  return n.toString(36).padStart(6, '0').toUpperCase();
 }
 
 async function markMigrationDone(id: string): Promise<void> {

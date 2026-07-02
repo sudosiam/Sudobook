@@ -4,7 +4,11 @@ import { db, type AppSettings } from '@/lib/db';
 export function getFYStartYear(date: Date = new Date(), fyStartMonth = 4): number {
   const month = date.getMonth() + 1; // 1-12
   const year = date.getFullYear();
-  return month >= fyStartMonth ? year : year - 1;
+  if (!Number.isFinite(month) || !Number.isFinite(year) || month < 1 || month > 12) {
+    return getFYStartYear(new Date(), fyStartMonth);
+  }
+  const fyStart = fyStartMonth >= 1 && fyStartMonth <= 12 ? fyStartMonth : 4;
+  return month >= fyStart ? year : year - 1;
 }
 
 /** "2024-25" style financial year label. */

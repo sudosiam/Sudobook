@@ -8,6 +8,7 @@ import { PwaUpdateBanner } from '@/components/common/PwaUpdateBanner';
 import { seedDatabase } from '@/lib/seed';
 import { postDueRecurringExpenses } from '@/lib/recurring';
 import { ensureSyncReset, startSyncEngine } from '@/lib/sync';
+import { startBackupScheduler } from '@/lib/scheduledBackup';
 import { applyTheme, getStoredTheme } from '@/store/useThemeStore';
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-500.css';
@@ -53,6 +54,7 @@ async function bootstrap() {
       console.error('[postDueRecurringExpenses]', err);
     }
     startSyncEngine();
+    startBackupScheduler();
   } catch (err) {
     // Non-fatal: still render the app so existing local data remains visible
     // even if a migration/seed/sync-boot step failed.

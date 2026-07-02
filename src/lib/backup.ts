@@ -1,5 +1,7 @@
-import { db, now } from '@/lib/db';
+import { db, now, uuid, type BackupSnapshot } from '@/lib/db';
 import { enqueueSync } from '@/lib/sync';
+
+const MAX_LOCAL_SNAPSHOTS = 5;
 
 const TABLES = [
   'accounts',
@@ -58,6 +60,30 @@ export function downloadBackup(backup: BackupFile, filenamePrefix = 'sudo-books-
   a.download = `${filenamePrefix}-${backup.exportedAt.slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/** Store a rolling archive of recent backups for quick restore on this device. */
+export async function saveBackupSnapshot(
+  file: BackupFile,
+  label: BackupSnapshot['label'],
+): Promise<string> {
+  const id = uuid();
+  const snapshot: BackupSnapshot = {
+    id,
+    createdAt: now(),
+    label,
+    file,
+  };
+
+  await db.transaction('rw', db.backupSnapshots, async () => {
+    await db.backupSnapshots.add(snapshot);
+    const excess = await db.backupSnapshots.orderBy('createdAt').reverse().offset(MAX_LOCAL_SNAPSHOTS).toArray();
+    for (const row of excess) {
+      await db.backupSnapshots.delete(row.id);
+    }
+  });
+
+  return id;
 }
 
 export async function restoreBackup(backup: BackupFile): Promise<void> {
