@@ -1,5 +1,7 @@
+import { format, parseISO } from 'date-fns';
+import { ChevronRight } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { TopBar } from '@/components/layout/TopBar';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -118,27 +120,36 @@ export default function BankDetail() {
                 <span className="text-right">Amount</span>
                 <span className="w-[5.5rem] text-right">Balance</span>
               </div>
-              {(txns ?? []).map((t) => (
-                <div
-                  key={t.id}
-                  className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-border-app px-3 py-2 last:border-0"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm text-foreground">{t.description}</p>
-                    <p className="text-xs text-muted">
-                      {t.reference} · {t.date}
-                    </p>
-                  </div>
-                  <MoneyDisplay
-                    amount={t.type === 'credit' ? t.amount : -t.amount}
-                    className="text-right text-sm font-semibold"
-                  />
-                  <MoneyDisplay
-                    amount={t.runningBalance}
-                    className="w-[5.5rem] text-right text-xs font-semibold tabular-nums"
-                  />
-                </div>
-              ))}
+              {(txns ?? []).map((t) => {
+                const isReversal = t.reference.startsWith('VOID-');
+                return (
+                  <Link
+                    key={t.id}
+                    to={`/banking/${id}/transactions/${t.id}`}
+                    className="grid min-h-[52px] grid-cols-[1fr_auto_auto] items-center gap-2 border-b border-border-app px-3 py-2 last:border-0 active:bg-surface-hover"
+                  >
+                    <div className="min-w-0">
+                      <p className={`truncate text-sm ${isReversal ? 'text-muted' : 'text-foreground'}`}>
+                        {t.description}
+                      </p>
+                      <p className="text-xs text-muted">
+                        {t.reference} · {format(parseISO(t.date), 'd MMM yyyy')}
+                      </p>
+                    </div>
+                    <MoneyDisplay
+                      amount={t.type === 'credit' ? t.amount : -t.amount}
+                      className={`text-right text-sm font-semibold ${isReversal ? 'text-muted' : ''}`}
+                    />
+                    <div className="flex w-[5.5rem] items-center justify-end gap-1">
+                      <MoneyDisplay
+                        amount={t.runningBalance}
+                        className="text-right text-xs font-semibold tabular-nums"
+                      />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-disabled" />
+                    </div>
+                  </Link>
+                );
+              })}
             </>
           )}
         </div>

@@ -1299,6 +1299,210 @@ export async function recordManualBankEntry(input: {
   );
 }
 
+/** Unique reversal reference for a single bank transaction row. */
+function voidRefFor(txn: BankTransaction): string {
+  return `VOID-${txn.id.slice(0, 8).toUpperCase()}`;
+}
+
+async function isBankTxnReversed(txn: BankTransaction): Promise<boolean> {
+  if (txn.reference.startsWith('VOID-')) return true;
+  const voidRef = voidRefFor(txn);
+  const count = await db.bankTransactions
+    .where('bankAccountId')
+    .equals(txn.bankAccountId)
+    .filter((t) => t.reference === voidRef)
+    .count();
+  return count > 0;
+}
+
+async function reverseSingleBankTxn(txn: BankTransaction): Promise<void> {
+  const bank = await db.bankAccounts.get(txn.bankAccountId);
+  if (!bank) throw new Error('Bank account not found');
+  await recordBankTxn(bank, txn.type === 'credit' ? 'debit' : 'credit', txn.amount, {
+    date: now().slice(0, 10),
+    description: `Void ${txn.description}`,
+    category: txn.category,
+    reference: voidRefFor(txn),
+    linkedId: txn.linkedId,
+  });
+}
+
+async function voidStandaloneBankTxn(txn: BankTransaction, reason: string): Promise<void> {
+  if (txn.journalEntryId) {
+    const je = await db.journalEntries.get(txn.journalEntryId);
+    if (je?.status === 'posted') await voidJournalEntryTx(txn.journalEntryId, reason);
+  }
+  await reverseSingleBankTxn(txn);
+}
+
+async function voidBankTransferByReference(reference: string, reason: string): Promise<void> {
+  const legs = await db.bankTransactions.filter((t) => t.reference === reference).toArray();
+  const activeLegs = legs.filter((t) => !t.reference.startsWith('VOID-'));
+
+  const jeIds = new Set<string>();
+  for (const leg of activeLegs) {
+    if (await isBankTxnReversed(leg)) continue;
+    if (leg.journalEntryId) jeIds.add(leg.journalEntryId);
+  }
+
+  for (const jeId of jeIds) {
+    const je = await db.journalEntries.get(jeId);
+    if (je?.status === 'posted') await voidJournalEntryTx(jeId, reason);
+  }
+
+  for (const leg of activeLegs) {
+    if (await isBankTxnReversed(leg)) continue;
+    await reverseSingleBankTxn(leg);
+  }
+}
+
+async function voidSalePaymentTxn(txn: BankTransaction, reason: string): Promise<void> {
+  const saleId = txn.linkedId;
+  if (!saleId) throw new Error('Linked sale not found');
+
+  const sale = await db.sales.get(saleId);
+  if (!sale) throw new Error('Linked sale not found');
+  if (sale.status === 'void') throw new Error('Sale is voided');
+  if (txn.journalEntryId === sale.journalEntryId) {
+    throw new Error('Initial sale payment — void the sale from the sale detail page');
+  }
+
+  if (txn.journalEntryId) {
+    const je = await db.journalEntries.get(txn.journalEntryId);
+    if (je?.status === 'posted') await voidJournalEntryTx(txn.journalEntryId, reason);
+  }
+
+  await reverseSingleBankTxn(txn);
+
+  const paidAmount = subtractMoney(sale.paidAmount, txn.amount);
+  const dueAmount = addMoney(sale.dueAmount, txn.amount);
+  const status: Sale['status'] =
+    dueAmount === sale.total ? 'credit' : dueAmount === 0 ? 'completed' : 'partial';
+
+  await db.sales.update(saleId, { paidAmount, dueAmount, status, updatedAt: now() });
+  const updated = await db.sales.get(saleId);
+  if (updated) await enqueueSync('sales', 'update', saleId, updated);
+}
+
+async function voidPurchasePaymentTxn(txn: BankTransaction, reason: string): Promise<void> {
+  const purchaseId = txn.linkedId;
+  if (!purchaseId) throw new Error('Linked purchase not found');
+
+  const purchase = await db.purchases.get(purchaseId);
+  if (!purchase) throw new Error('Linked purchase not found');
+  if (purchase.status === 'void') throw new Error('Purchase is voided');
+  if (txn.journalEntryId === purchase.journalEntryId) {
+    throw new Error('Initial purchase payment — void the purchase from the purchase detail page');
+  }
+
+  if (txn.journalEntryId) {
+    const je = await db.journalEntries.get(txn.journalEntryId);
+    if (je?.status === 'posted') await voidJournalEntryTx(txn.journalEntryId, reason);
+  }
+
+  await reverseSingleBankTxn(txn);
+
+  const paidAmount = subtractMoney(purchase.paidAmount, txn.amount);
+  const dueAmount = addMoney(purchase.dueAmount, txn.amount);
+  const status: Purchase['status'] =
+    dueAmount === purchase.total ? 'credit' : dueAmount === 0 ? 'completed' : 'partial';
+
+  await db.purchases.update(purchaseId, { paidAmount, dueAmount, status, updatedAt: now() });
+  const updated = await db.purchases.get(purchaseId);
+  if (updated) await enqueueSync('purchases', 'update', purchaseId, updated);
+}
+
+export type BankTxnVoidEligibility =
+  | { canVoid: true }
+  | { canVoid: false; message: string; linkTo?: string; linkLabel?: string };
+
+/** Whether a bank register row can be reversed from the banking detail screen. */
+export async function getBankTxnVoidEligibility(txn: BankTransaction): Promise<BankTxnVoidEligibility> {
+  if (txn.reference.startsWith('VOID-')) {
+    return { canVoid: false, message: 'This is a reversal entry.' };
+  }
+  if (await isBankTxnReversed(txn)) {
+    return { canVoid: false, message: 'This transaction has already been reversed.' };
+  }
+  if (txn.category === 'expense' && txn.linkedId) {
+    return {
+      canVoid: false,
+      message: 'Void this expense from the Expenses list instead.',
+      linkTo: '/expenses',
+      linkLabel: 'Go to expenses',
+    };
+  }
+  if (txn.category === 'sale' && txn.linkedId) {
+    const sale = await db.sales.get(txn.linkedId);
+    if (sale?.status === 'void') {
+      return { canVoid: false, message: 'The linked sale is voided.' };
+    }
+    if (sale && txn.journalEntryId === sale.journalEntryId) {
+      return {
+        canVoid: false,
+        message: 'This is the initial sale payment. Void the sale from the sale detail page.',
+        linkTo: `/sales/${sale.id}`,
+        linkLabel: 'View sale',
+      };
+    }
+  }
+  if (txn.category === 'purchase' && txn.linkedId) {
+    const purchase = await db.purchases.get(txn.linkedId);
+    if (purchase?.status === 'void') {
+      return { canVoid: false, message: 'The linked purchase is voided.' };
+    }
+    if (purchase && txn.journalEntryId === purchase.journalEntryId) {
+      return {
+        canVoid: false,
+        message: 'This is the initial purchase payment. Void the purchase from the purchase detail page.',
+        linkTo: `/purchases/${purchase.id}`,
+        linkLabel: 'View purchase',
+      };
+    }
+  }
+  return { canVoid: true };
+}
+
+/** Reverse a bank register entry (manual entry, transfer, or follow-up payment). */
+export async function voidBankTransaction(txnId: string, reason: string): Promise<void> {
+  assertDbWritable();
+  const trimmed = reason.trim();
+  if (!trimmed) throw new Error('Reason required');
+
+  const txn = await db.bankTransactions.get(txnId);
+  if (!txn) throw new Error('Transaction not found');
+
+  const eligibility = await getBankTxnVoidEligibility(txn);
+  if (!eligibility.canVoid) throw new Error(eligibility.message);
+
+  await db.transaction(
+    'rw',
+    [db.bankTransactions, db.bankAccounts, db.journalEntries, db.sales, db.purchases, db.syncQueue],
+    async () => {
+      const current = await db.bankTransactions.get(txnId);
+      if (!current) throw new Error('Transaction not found');
+
+      const recheck = await getBankTxnVoidEligibility(current);
+      if (!recheck.canVoid) throw new Error(recheck.message);
+
+      if (current.category === 'transfer') {
+        await voidBankTransferByReference(current.reference, trimmed);
+        return;
+      }
+      if (current.category === 'sale' && current.linkedId) {
+        await voidSalePaymentTxn(current, trimmed);
+        return;
+      }
+      if (current.category === 'purchase' && current.linkedId) {
+        await voidPurchasePaymentTxn(current, trimmed);
+        return;
+      }
+      await voidStandaloneBankTxn(current, trimmed);
+    },
+  );
+  requestSync();
+}
+
 // ─── INVENTORY ────────────────────────────────────────────────
 
 export async function adjustStock(input: {

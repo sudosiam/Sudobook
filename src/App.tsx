@@ -27,6 +27,7 @@ const VendorDetail = lazyRetry(() => import('@/pages/vendors/VendorDetail'));
 const VendorStatement = lazyRetry(() => import('@/pages/vendors/VendorStatement'));
 const BankingOverview = lazyRetry(() => import('@/pages/banking/BankingOverview'));
 const BankDetail = lazyRetry(() => import('@/pages/banking/BankDetail'));
+const BankTransactionDetail = lazyRetry(() => import('@/pages/banking/BankTransactionDetail'));
 const GeneralLedger = lazyRetry(() => import('@/pages/ledger/GeneralLedger'));
 const ChartOfAccounts = lazyRetry(() => import('@/pages/reports/ChartOfAccounts'));
 const TrialBalance = lazyRetry(() => import('@/pages/ledger/TrialBalance'));
@@ -81,6 +82,7 @@ export default function App() {
           <Route path="/banking" element={<BankingOverview />} />
           <Route path="/banking/transfer" element={<BankTransferPage />} />
           <Route path="/banking/manual-entry" element={<ManualBankEntryPage />} />
+          <Route path="/banking/:bankId/transactions/:txnId" element={<BankTransactionDetail />} />
           <Route path="/banking/:id" element={<BankDetail />} />
           <Route path="/ledger" element={<GeneralLedger />} />
           <Route path="/reports/chart-of-accounts" element={<ChartOfAccounts />} />
