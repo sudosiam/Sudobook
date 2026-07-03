@@ -1,5 +1,4 @@
 import Dexie, { type Table } from 'dexie';
-import dexieCloud from 'dexie-cloud-addon';
 import { generateUuid } from '@/lib/utils';
 import type { DashboardMetrics, MonthPoint, NetWorthPoint } from '@/lib/reports';
 
@@ -269,12 +268,6 @@ export interface AppSettings {
   cashAccountId: string;
   defaultBankId: string;
   currency: 'INR';
-  /** Last successful Dexie Cloud sync (also mirrored in useSyncStore). */
-  lastSyncAt?: string;
-  /** @deprecated Supabase pull watermark — unused after Dexie Cloud migration. */
-  lastPullAt?: string;
-  lastPullAtByTable?: Record<string, string>;
-  syncResetToken?: string;
   /** Short random per-device code (e.g. "A3") that makes document numbers collision-proof across devices. */
   deviceId?: string;
   /** Guards one-time data migrations that must not re-run. */
@@ -351,31 +344,7 @@ class SudoBooksDB extends Dexie {
   >;
 
   constructor() {
-    super('SudoBooksDB', { addons: [dexieCloud] });
-
-    // Dexie Cloud MUST be configured before the database opens (i.e. before any
-    // db.table operation). Doing it here — before version() calls — guarantees
-    // correct ordering regardless of what main.tsx does first.
-    const cloudUrl = (import.meta.env.VITE_DEXIE_CLOUD_URL as string | undefined)?.trim();
-    if (cloudUrl) {
-      this.cloud.configure({
-        databaseUrl: cloudUrl,
-        requireAuth: false,
-        nameSuffix: false,
-        socialAuth: false,
-        // Let Dexie Cloud use the existing PWA service worker for background sync
-        // so data syncs even when the app is minimised / not in the foreground.
-        tryUseServiceWorker: true,
-        // Periodic Background Sync API (Chrome/Android) — request a sync every
-        // 30 minutes even when the app is closed. Falls back gracefully on
-        // browsers that do not support the API.
-        periodicSync: {
-          minInterval: 30 * 60 * 1000,
-        },
-        // These tables live on-device only — never uploaded to the cloud.
-        unsyncedTables: ['settings', 'dashboardCache', 'backupSnapshots', 'backupFolder'],
-      });
-    }
+    super('SudoBooksDB');
 
     // Schema versioning only — bump when stores/indexes change.
     // One-time data backfills run via `runMigrations()` in lib/migrations/runner.ts

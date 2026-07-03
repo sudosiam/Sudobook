@@ -2,8 +2,6 @@ import { useEffect, useRef, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Toaster } from '@/components/common/Toaster';
-import { useOnline } from '@/hooks/useOnline';
-import { useAuth } from '@/hooks/useAuth';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useScrollRestoration } from '@/hooks/useScrollRestoration';
 import { useSwipeBack } from '@/hooks/useSwipeBack';
@@ -12,8 +10,6 @@ import { getCurrentFY } from '@/lib/sequences';
 import { isPrimaryRoute } from '@/lib/navigation';
 
 export function AppShell() {
-  useOnline();
-  useAuth();
   useScrollRestoration();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const isMobile = useIsMobile();

@@ -1,7 +1,6 @@
 import { ArrowLeft, Menu } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { SyncBadge } from '@/components/common/SyncBadge';
 import { useAppStore } from '@/store/useAppStore';
 import { isPrimaryRoute } from '@/lib/navigation';
 
@@ -49,7 +48,6 @@ export function TopBar({
           </h1>
         </div>
         <div className="flex shrink-0 items-center gap-0.5 overflow-visible pr-0.5 sm:gap-1.5 sm:pr-2.5">
-          <SyncBadge compact />
           {right}
         </div>
       </header>

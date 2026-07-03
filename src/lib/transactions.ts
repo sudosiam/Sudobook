@@ -15,7 +15,7 @@ import {
   type StockMovement,
 } from '@/lib/db';
 import { CODES } from '@/lib/coa';
-import { postJournalEntryTx, voidJournalEntryTx } from '@/lib/accounting';
+import { JOURNAL_STORES, postJournalEntryTx, voidJournalEntryTx } from '@/lib/accounting';
 import { addMoney, multiplyMoney, reverseWeightedAverageCost, subtractMoney, weightedAverageCost } from '@/lib/money';
 import {
   assertExpenseAccountCode,
@@ -1184,7 +1184,7 @@ export async function recordCreditCardCharge(input: {
   const map = await codeToIdMap();
   const linkedId = uuid();
 
-  await db.transaction('rw', [db.journalEntries], async () => {
+  await db.transaction('rw', [...JOURNAL_STORES], async () => {
     await postCreditCardChargeTx(input, linkedId, map);
   });
 
@@ -1363,7 +1363,7 @@ export async function recordManualBankEntry(input: {
 
   await db.transaction(
     'rw',
-    [db.bankTransactions, db.journalEntries],
+    [db.bankTransactions, db.journalEntries, db.settings],
     async () => {
       const journalEntryId = await postJournalEntryTx({
         date: input.date,
@@ -1580,7 +1580,7 @@ export async function voidBankTransaction(txnId: string, reason: string): Promis
 
   await db.transaction(
     'rw',
-    [db.bankTransactions, db.bankAccounts, db.journalEntries, db.sales, db.purchases],
+    [db.bankTransactions, db.bankAccounts, db.journalEntries, db.sales, db.purchases, db.settings],
     async () => {
       const current = await db.bankTransactions.get(txnId);
       if (!current) throw new Error('Transaction not found');
@@ -1625,7 +1625,7 @@ export async function adjustStock(input: {
 
   await db.transaction(
     'rw',
-    [db.products, db.stockMovements, db.journalEntries],
+    [db.products, db.stockMovements, db.journalEntries, db.settings],
     async () => {
       const product = await db.products.get(input.productId);
       if (!product) throw new Error('Product not found');

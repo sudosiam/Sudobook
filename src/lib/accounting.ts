@@ -12,7 +12,8 @@ export interface NewJournalEntry {
   reversalOf?: string;
 }
 
-const JOURNAL_STORES = [db.journalEntries, db.settings] as const;
+/** Dexie rw scope required whenever postJournalEntryTx / voidJournalEntryTx runs. */
+export const JOURNAL_STORES = [db.journalEntries, db.settings] as const;
 
 function assertBalanced(lines: JournalLine[]): void {
   if (lines.length < 2) {

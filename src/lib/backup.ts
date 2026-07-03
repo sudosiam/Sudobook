@@ -1,6 +1,4 @@
 import { db, now, uuid, type BackupSnapshot } from '@/lib/db';
-import { isCloudLoggedIn } from '@/lib/cloud';
-import { syncNow } from '@/lib/sync';
 
 const MAX_LOCAL_SNAPSHOTS = 5;
 
@@ -116,17 +114,10 @@ export async function restoreBackup(backup: BackupFile): Promise<void> {
     }
 
     await db.settings.update('singleton', {
-      lastSyncAt: undefined,
-      lastPullAt: undefined,
-      lastPullAtByTable: undefined,
       dashboardRevision: 0,
     });
 
     // Wipe stale cached metrics so the dashboard recomputes from restored data.
     await db.dashboardCache.clear();
   });
-
-  if (isCloudLoggedIn()) {
-    await syncNow();
-  }
 }

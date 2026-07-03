@@ -6,10 +6,8 @@ import { PageContainer } from '@/components/layout/PageContainer';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { Button, Field, Input } from '@/components/common/Field';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
-import { SyncPanel } from '@/components/common/SyncPanel';
 import { ThemeToggle } from '@/components/common/ThemeToggle';
 import { useSettings } from '@/hooks/useSettings';
-import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/lib/db';
 import { downloadBackup, exportBackup, restoreBackup, type BackupFile } from '@/lib/backup';
 import { factoryReset } from '@/lib/factoryReset';
@@ -31,7 +29,6 @@ import {
   previewVoidReversalCleanup,
   repairVoidDoubleReversals,
 } from '@/lib/migrations/voidReversalCleanup';
-import { isDexieCloudConfigured } from '@/lib/cloud';
 import { getErrorMessage } from '@/lib/errors';
 import { toast } from '@/store/useToast';
 import { formatStorageBytes, getStorageEstimate, type StorageEstimate } from '@/lib/storageEstimate';
@@ -39,12 +36,9 @@ import { APP_VERSION } from '@/lib/version';
 
 export default function Settings() {
   const settings = useSettings();
-  const { activeUserId, userEmail, login, signOut } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingRestore, setPendingRestore] = useState<BackupFile | null>(null);
   const [businessName, setBusinessName] = useState('');
-  const [email, setEmail] = useState('');
-  const [authBusy, setAuthBusy] = useState(false);
   const [repairBusy, setRepairBusy] = useState(false);
   const [orphanCount, setOrphanCount] = useState<number | null>(null);
   const [factoryOpen, setFactoryOpen] = useState(false);
@@ -67,17 +61,6 @@ export default function Settings() {
   }, []);
 
   if (!settings) return <LoadingSpinner />;
-
-  const doLogin = async () => {
-    setAuthBusy(true);
-    try {
-      await login(email.trim() || undefined);
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Sign in failed'));
-    } finally {
-      setAuthBusy(false);
-    }
-  };
 
   const saveName = async () => {
     try {
@@ -156,7 +139,7 @@ export default function Settings() {
         toast.success('Nothing to repair');
       } else {
         toast.success(
-          `Repaired ${voidedCount} journal entr${voidedCount === 1 ? 'y' : 'ies'} — sync when online to update cloud`,
+          `Repaired ${voidedCount} journal entr${voidedCount === 1 ? 'y' : 'ies'}`,
         );
       }
     } catch (err) {
@@ -169,7 +152,7 @@ export default function Settings() {
 
   const confirmFactoryReset = async () => {
     try {
-      await factoryReset({ userId: activeUserId });
+      await factoryReset();
       toast.success('Factory reset complete — backup downloaded. Reloading…');
       setFactoryOpen(false);
       window.location.href = '/';
@@ -493,52 +476,6 @@ export default function Settings() {
             </div>
           </section>
 
-          {isDexieCloudConfigured && (
-            <section>
-              <h2 className="mb-2 text-xs uppercase tracking-wider text-muted">Cloud Account</h2>
-              <div className="space-y-3 card">
-                {activeUserId ? (
-                  <>
-                    <p className="text-sm text-foreground">
-                      Signed in as <span className="text-brand-light">{userEmail}</span>
-                    </p>
-                    <p className="text-xs text-muted">
-                      Signing out clears this device and reloads empty books. Cloud data stays safe — sign in again
-                      to restore.
-                    </p>
-                    <Button variant="secondary" onClick={() => void signOut()}>
-                      Sign Out
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-xs text-muted">
-                      Optional — use the app offline without an account. Sign in when you want cloud backup and
-                      multi-device sync. Dexie Cloud sends a one-time code to your email.
-                    </p>
-                    <Field label="Email (optional hint)">
-                      <Input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="you@example.com"
-                        autoComplete="email"
-                      />
-                    </Field>
-                    <Button className="w-full" disabled={authBusy} onClick={() => void doLogin()}>
-                      Sign In with Email
-                    </Button>
-                  </>
-                )}
-              </div>
-            </section>
-          )}
-
-          <section>
-            <h2 className="mb-2 text-xs uppercase tracking-wider text-muted">Sync</h2>
-            <SyncPanel activeUserId={activeUserId} />
-          </section>
-
           <section>
             <h2 className="mb-2 text-xs uppercase tracking-wider text-danger">Danger Zone</h2>
             <div className="space-y-3 rounded-xl border border-danger/30 bg-surface p-4">
@@ -577,7 +514,7 @@ export default function Settings() {
       <ConfirmDialog
         open={factoryOpen}
         title="Factory reset?"
-        message="A backup file will download automatically. Then every local record will be permanently deleted. Cloud data is wiped when signed in and online. This cannot be undone."
+        message="A backup file will download automatically. Then every local record will be permanently deleted. This cannot be undone."
         confirmLabel="Delete everything"
         danger
         requirePhrase="DELETE ALL"
