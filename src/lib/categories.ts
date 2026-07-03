@@ -1,16 +1,16 @@
 import { db, now, uuid, type ProductCategory } from '@/lib/db';
 
-/** Same sentinel epoch as seed.ts — ensures cloud data always wins over local seed. */
+/** Same sentinel epoch as seed.ts — keeps default categories stable across reinstalls. */
 const SEED_EPOCH = '2020-01-01T00:00:00.000Z';
 
 export interface CategorySeed {
-  id: string; // deterministic UUID — same on every device (Supabase requires uuid)
+  id: string; // deterministic UUID — same on every device
   legacySlug?: string; // old slug id before category-slug-to-uuid-v1 migration
   name: string;
   skuPrefix: string;
 }
 
-/** Fixed default category UUIDs — hex-only (required by Postgres `uuid` type). */
+/** Fixed default category UUIDs — hex-only RFC 4122 format. */
 const DEFAULT_CATEGORY_UUIDS: Record<string, string> = {
   escooter: '0ca70001-0000-4000-8000-000000000001',
   erickshaw: '0ca70002-0000-4000-8000-000000000002',
@@ -30,7 +30,7 @@ export function categoryUuid(slug: string): string {
   return id;
 }
 
-/** Old broken ids used letters outside hex in the uuid tail — invalid for Supabase. */
+/** Old broken ids used letters outside hex in the uuid tail. */
 export function brokenCategoryUuid(slug: string): string {
   const tail = slug
     .toLowerCase()
@@ -41,9 +41,8 @@ export function brokenCategoryUuid(slug: string): string {
 }
 
 /**
- * Default categories seeded on first run. IDs are deterministic UUIDs so they
- * sync cleanly to Supabase; legacySlug documents the old enum/slug values for
- * the one-time Dexie migration.
+ * Default categories seeded on first run. IDs are deterministic UUIDs;
+ * legacySlug documents the old enum/slug values for the one-time migration.
  */
 export const DEFAULT_CATEGORIES: CategorySeed[] = [
   { id: categoryUuid('escooter'), legacySlug: 'escooter', name: 'E-Scooter', skuPrefix: 'ESC' },
@@ -54,7 +53,7 @@ export const DEFAULT_CATEGORIES: CategorySeed[] = [
 ];
 
 /** Seed default categories that don't exist yet — safe to call repeatedly. */
-export async function syncDefaultCategories(): Promise<void> {
+export async function seedDefaultCategories(): Promise<void> {
   await db.transaction('rw', db.productCategories, async () => {
     for (const seed of DEFAULT_CATEGORIES) {
       const existing = await db.productCategories.get(seed.id);

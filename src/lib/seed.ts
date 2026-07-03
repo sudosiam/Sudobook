@@ -1,16 +1,13 @@
 import { db, type Account, type AppSettings, type BankAccount } from '@/lib/db';
 import { DEFAULT_ACCOUNTS, CODES, accountUuid, CASH_DRAWER_ID } from '@/lib/coa';
-import { syncDefaultCategories } from '@/lib/categories';
+import { seedDefaultCategories } from '@/lib/categories';
 import { getCurrentFY } from '@/lib/sequences';
 import { INITIAL_MIGRATION_TOKENS, runMigrations } from '@/lib/migrations/runner';
 
 /**
- * Sentinel timestamp used for ALL deterministic seed records (chart of accounts,
- * cash drawer, default product categories). Using a fixed past date ensures that
- * any real data from the cloud — which has genuine timestamps — is always NEWER
- * and wins in Dexie Cloud's last-write-wins conflict resolution. Without this, a
- * Device 2 first-boot seed (updatedAt = now) would silently overwrite Device 1's
- * cloud data (e.g., a cash drawer with a real openingBalance).
+ * Sentinel timestamp for ALL deterministic seed records (chart of accounts,
+ * cash drawer, default product categories). Using a fixed past date keeps
+ * seeded rows stable across reinstalls and backup restores.
  */
 const SEED_EPOCH = '2020-01-01T00:00:00.000Z';
 
@@ -95,9 +92,8 @@ async function ensureCashDrawerTx(): Promise<void> {
  * Idempotently seed the local database on first run: chart of accounts,
  * a default cash bank account, and the singleton settings row.
  *
- * Seeded rows use DETERMINISTIC ids (see coa.ts) so every device produces the
- * exact same primary keys. They are also enqueued for sync so the cloud has a
- * canonical copy and a brand-new device merges cleanly instead of duplicating.
+ * Seeded rows use deterministic ids (see coa.ts) so every install produces
+ * the same primary keys for built-in accounts and categories.
  */
 export async function seedDatabase(): Promise<void> {
   const existing = await db.settings.get('singleton');
@@ -117,7 +113,7 @@ export async function seedDatabase(): Promise<void> {
     async () => {
       await seedMissingAccountsTx();
 
-      await syncDefaultCategories();
+      await seedDefaultCategories();
 
       const cashAccountId = accountUuid(CODES.CASH);
 

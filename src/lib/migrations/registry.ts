@@ -8,17 +8,13 @@ import {
   migrateCategoryUuidHexFix,
 } from '@/lib/migrations/categoryUuidHexFix';
 import {
-  SCRUB_INVALID_SYNC_IDS_MIGRATION,
-  scrubInvalidSyncRecordIds,
-} from '@/lib/migrations/scrubInvalidSyncRecordIds';
+  SCRUB_INVALID_RECORD_IDS_MIGRATION,
+  scrubInvalidRecordIds,
+} from '@/lib/migrations/scrubInvalidRecordIds';
 import {
   VOID_REVERSAL_CLEANUP_MIGRATION,
   migrateVoidDoubleReversals,
 } from '@/lib/migrations/voidReversalCleanup';
-import {
-  RETRY_FAILED_SYNC_MIGRATION,
-  retryFailedSyncQueue,
-} from '@/lib/migrations/retryFailedSyncQueue';
 import {
   CLEAR_DEFAULT_BUSINESS_NAME_MIGRATION,
   clearDefaultBusinessName,
@@ -39,7 +35,8 @@ export const DATA_MIGRATIONS: DataMigration[] = [
   { id: VOID_REVERSAL_CLEANUP_MIGRATION, run: async () => { await migrateVoidDoubleReversals(); } },
   { id: CATEGORY_SLUG_MIGRATION, run: migrateCategorySlugIds },
   { id: CATEGORY_UUID_HEX_MIGRATION, run: migrateCategoryUuidHexFix },
-  { id: SCRUB_INVALID_SYNC_IDS_MIGRATION, run: scrubInvalidSyncRecordIds },
-  { id: RETRY_FAILED_SYNC_MIGRATION, run: retryFailedSyncQueue },
+  { id: SCRUB_INVALID_RECORD_IDS_MIGRATION, run: scrubInvalidRecordIds },
+  /** Legacy token — no-op, kept so existing installs do not re-run removed logic. */
+  { id: 'retry-failed-sync-queue-v1', run: async () => {} },
   { id: CLEAR_DEFAULT_BUSINESS_NAME_MIGRATION, run: clearDefaultBusinessName },
 ];

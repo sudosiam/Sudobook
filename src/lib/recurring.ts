@@ -5,7 +5,7 @@ import { recurringExpenseSchema } from '@/lib/validators';
 
 export type RecurringExpenseInput = Omit<
   RecurringExpense,
-  'id' | 'isActive' | 'lastPostedMonth' | 'createdAt' | 'updatedAt' | 'syncedAt'
+  'id' | 'isActive' | 'lastPostedMonth' | 'createdAt' | 'updatedAt'
 >;
 
 /** Build YYYY-MM expense date for a recurring template in a given month key. */

@@ -1,6 +1,6 @@
 # SUDO BOOKS PWA — Cursor AI Rules
 # Industrial-Grade Accounting & Finance PWA
-# Stack: React 18 + Vite + TypeScript + Dexie.js + Supabase + Tailwind v4
+# Stack: React 18 + Vite + TypeScript + Dexie.js + Tailwind v4
 # Mobile-First PWA | Local-First | Dark Theme | Solo User
 
 ---
@@ -97,25 +97,20 @@ The `postJournalEntry()` function MUST verify:
 
 ### RULE 3: LOCAL-FIRST — DEXIE IS THE SOURCE OF TRUTH
 
-Always read from Dexie (IndexedDB). NEVER read directly from Supabase
-in component code. Supabase is the cloud backup, not the primary source.
+Always read from Dexie (IndexedDB). There is no cloud backend.
 
 ```typescript
 // ✅ CORRECT — read from Dexie
 const sales = await db.sales.where('date').between(start, end).toArray();
-
-// ❌ WRONG — reading from Supabase in a component
-const { data } = await supabase.from('sales').select('*');
 ```
 
-All writes go to Dexie first, then queue to SyncQueue for background sync.
-Never await Supabase in a write path — it will block the UI on mobile.
+All writes go directly to Dexie inside transactions. No outbound sync queue.
 
 ```typescript
 // ✅ CORRECT write pattern
-await db.transaction('rw', db.sales, db.syncQueue, async () => {
+await db.transaction('rw', db.sales, db.journalEntries, db.settings, async () => {
   await db.sales.add(newSale);
-  await db.syncQueue.add({ table: 'sales', operation: 'create', data: newSale, ... });
+  await postJournalEntryTx({ ... });
 });
 ```
 
@@ -135,7 +130,6 @@ function processEntry(entry: any): void { ... }
 ```
 
 All Dexie table types must be explicitly defined in `src/lib/db.ts`.
-All Supabase responses must be typed using `Database` generated types.
 
 ---
 
@@ -179,7 +173,6 @@ All list items minimum 64px tall. Bottom navigation always visible.
 react@18                   react-dom@18
 react-router-dom@6
 dexie@4                    dexie-react-hooks@1
-@supabase/supabase-js@2
 zustand@4
 recharts@2
 react-hook-form@7          @hookform/resolvers@3
@@ -198,9 +191,6 @@ Import conventions:
 // Dexie
 import { db } from '@/lib/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-
-// Supabase (only in sync layer)
-import { supabase } from '@/lib/supabase';
 
 // Money
 import { toPaise, toINR, addMoney, pct } from '@/lib/money';
@@ -328,27 +318,7 @@ Warning:        text-[#F59E0B]     ← pending, partial payment, low stock
 ```tsx
 <header className="sticky top-0 bg-[#0a0a0a]/90 backdrop-blur border-b border-[#262626] flex items-center justify-between px-4 h-14 z-40">
   <h1 className="text-base font-semibold text-[#F5F5F5]">{title}</h1>
-  {/* right slot: sync badge, etc. */}
 </header>
-```
-
-**Sync Badge:**
-```tsx
-// Online & synced
-<span className="flex items-center gap-1 text-xs text-[#22C55E]">
-  <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E]" />
-  Synced
-</span>
-// Offline
-<span className="flex items-center gap-1 text-xs text-[#A3A3A3]">
-  <span className="w-1.5 h-1.5 rounded-full bg-[#525252]" />
-  Offline
-</span>
-// Pending sync
-<span className="flex items-center gap-1 text-xs text-[#F59E0B]">
-  <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] animate-pulse" />
-  Pending ({count})
-</span>
 ```
 
 ---
@@ -359,64 +329,29 @@ Warning:        text-[#F59E0B]     ← pending, partial payment, low stock
 src/
 ├── lib/
 │   ├── db.ts           ← Dexie schema + db instance (SINGLE EXPORT: db)
-│   ├── supabase.ts     ← Supabase client (SINGLE EXPORT: supabase)
 │   ├── money.ts        ← Paise arithmetic (toPaise, toINR, addMoney, pct)
 │   ├── accounting.ts   ← postJournalEntry(), getAccountBalance()
-│   ├── sync.ts         ← processSyncQueue(), pullFromSupabase()
+│   ├── backup.ts       ← export/restore JSON backups
+│   ├── scheduledBackup.ts ← automatic backup scheduler
 │   ├── sequences.ts    ← getNextSaleNumber(), getNextPurchaseNumber()
 │   ├── reports.ts      ← getPnL(), getBalanceSheet(), getCashFlow()
 │   └── validators.ts   ← Zod schemas for all forms
 │
 ├── hooks/
-│   ├── useDB.ts        ← Dexie live query wrappers
-│   ├── useSync.ts      ← sync status + manual trigger
-│   ├── useOnline.ts    ← navigator.onLine + events
 │   ├── useSettings.ts  ← app settings from Dexie
 │   └── useFinancials.ts ← dashboard computed metrics
 │
 ├── store/
-│   ├── useAppStore.ts  ← UI state, active FY, auth user
-│   └── useSyncStore.ts ← sync status, pending count, last sync
+│   ├── useAppStore.ts  ← UI state, active FY, sidebar
+│   └── useToast.ts     ← toast notifications
 │
 ├── components/
-│   ├── layout/
-│   │   ├── AppShell.tsx
-│   │   ├── BottomNav.tsx
-│   │   ├── TopBar.tsx
-│   │   └── PageContainer.tsx
-│   ├── common/
-│   │   ├── MoneyDisplay.tsx   ← always use this, never raw toINR in JSX
-│   │   ├── MoneyInput.tsx     ← handles paise conversion on change
-│   │   ├── DatePicker.tsx
-│   │   ├── SearchBar.tsx
-│   │   ├── EmptyState.tsx
-│   │   ├── StatCard.tsx
-│   │   ├── SyncBadge.tsx
-│   │   └── ConfirmDialog.tsx
+│   ├── layout/         ← AppShell, TopBar, BottomNav, Sidebar
+│   ├── common/         ← MoneyDisplay, MoneyInput, ConfirmDialog, etc.
 │   ├── charts/
-│   │   ├── RevenueChart.tsx
-│   │   ├── ExpenseChart.tsx
-│   │   └── NetWorthChart.tsx
 │   └── forms/
-│       ├── LineItemEditor.tsx
-│       ├── CustomerForm.tsx
-│       ├── VendorForm.tsx
-│       ├── ProductForm.tsx
-│       └── BankAccountForm.tsx
 │
-└── pages/
-    ├── Dashboard.tsx
-    ├── sales/
-    ├── purchases/
-    ├── expenses/
-    ├── inventory/
-    ├── customers/
-    ├── vendors/
-    ├── banking/
-    ├── ledger/
-    ├── reports/
-    ├── growth/
-    └── settings/
+└── pages/              ← route screens (lazy-loaded)
 ```
 
 ---
@@ -439,7 +374,7 @@ this.version(2).stores({
 ```
 
 **ID convention:** All primary keys are UUID strings (`crypto.randomUUID()`).
-Never use auto-increment integers as primary keys (breaks sync).
+Never use auto-increment integers as primary keys (breaks backup restore).
 
 **Amount convention:** All monetary fields end in a comment `// paise`
 and are typed as `number` (JavaScript integer).
@@ -448,8 +383,15 @@ and are typed as `number` (JavaScript integer).
 Never store Date objects. Store dates as `"2024-03-15"` (YYYY-MM-DD strings).
 
 **Soft deletes:** Nothing is hard-deleted. Use `isActive: false` for accounts/
-products. Use `status: 'void'` for journal entries. Use `deletedAt: string | null`
-for sync-relevant records.
+products. Use `status: 'void'` for journal entries.
+
+---
+
+## BACKUP — LOCAL JSON EXPORT
+
+Automatic and manual backups live in `src/lib/backup.ts` and `src/lib/scheduledBackup.ts`.
+Backups include SHA-256 checksums (v2). Restore replaces all business data on device.
+Keep exported `.json` files off-device (Google Drive, email) for disaster recovery.
 
 ---
 
@@ -496,39 +438,6 @@ When generating financial reports:
 - Total Assets = SUM of debit balances in 100–199
 - Total Liabilities = SUM of credit balances in 200–299
 - Net Worth = Total Assets − Total Liabilities
-
----
-
-## SYNC ENGINE — SUPABASE RULES
-
-The `processSyncQueue()` function in `src/lib/sync.ts` is the ONLY place
-that talks to Supabase for writes. It runs:
-- On app load (if online)
-- When `navigator.onLine` fires 'online' event
-- Every 10 seconds via setInterval (if online)
-- When user manually taps "Sync Now"
-
-```typescript
-// Correct sync queue entry creation (always inside Dexie transaction)
-await db.syncQueue.add({
-  id: crypto.randomUUID(),
-  table: 'sales',
-  operation: 'create', // 'create' | 'update' | 'delete'
-  recordId: sale.id,
-  data: sale,
-  timestamp: new Date().toISOString(),
-  retryCount: 0,
-  status: 'pending'
-});
-```
-
-Max retries: 3. After 3 failures, mark as 'failed' and show user an alert.
-
-For pull sync (Supabase → Dexie), use `updated_at` timestamp comparison.
-Only pull records newer than `settings.lastSyncAt`.
-
-All Supabase tables have RLS enabled. Every row has `user_id` matching
-`supabase.auth.user().id`. The app MUST be authenticated to sync.
 
 ---
 
@@ -701,28 +610,9 @@ Chart container must have `width="100%"` and explicit height.
 // src/store/useAppStore.ts
 interface AppState {
   currentFY: string;        // "2024-25"
-  activeUserId: string | null;
-  isAuthLoading: boolean;
-  setUser: (id: string | null) => void;
-}
-
-export const useAppStore = create<AppState>((set) => ({
-  currentFY: getCurrentFY(),
-  activeUserId: null,
-  isAuthLoading: true,
-  setUser: (id) => set({ activeUserId: id, isAuthLoading: false }),
-}));
-
-// src/store/useSyncStore.ts
-interface SyncState {
-  status: 'idle' | 'syncing' | 'error';
-  pendingCount: number;
-  lastSyncAt: string | null;
-  isOnline: boolean;
-  setSyncing: (v: boolean) => void;
-  setPendingCount: (n: number) => void;
-  setOnline: (v: boolean) => void;
-  setLastSync: (ts: string) => void;
+  sidebarOpen: boolean;
+  setCurrentFY: (fy: string) => void;
+  setSidebarOpen: (open: boolean) => void;
 }
 ```
 
@@ -730,8 +620,7 @@ interface SyncState {
 
 ## PWA RULES
 
-Service worker registered via `vite-plugin-pwa`. Use Workbox `NetworkFirst`
-for Supabase API calls, `CacheFirst` for static assets.
+Service worker registered via `vite-plugin-pwa`. Workbox precaches static assets.
 
 Manifest settings:
 ```json
@@ -795,8 +684,8 @@ const sales = useLiveQuery(
 - ✅ Multi-bank account management
 - ✅ P&L, Balance Sheet, Cash Flow reports
 - ✅ Business growth analytics
-- ✅ Offline-first PWA (works without internet)
-- ✅ Supabase cloud backup + sync
+- ✅ Offline-first local PWA (works without internet)
+- ✅ JSON backup/restore on device
 
 ---
 
@@ -804,9 +693,9 @@ const sales = useLiveQuery(
 
 1. ALL monetary values → integers (paise). No exceptions.
 2. ALL money math → use functions from `src/lib/money.ts`
-3. ALL financial transactions → call `postJournalEntry()`
-4. ALL data reads → Dexie, not Supabase
-5. ALL writes → Dexie first, then SyncQueue
+3. ALL financial transactions → call `postJournalEntry()` or `postJournalEntryTx()` inside Dexie transactions that include `db.settings`
+4. ALL data reads → Dexie only
+5. ALL writes → Dexie transactions only (no cloud queue)
 6. ALL components → dark theme, Tailwind only, mobile-first
 7. ALL amounts displayed → wrapped in `<MoneyDisplay>` component or `toINR()`
 8. ALL IDs → `crypto.randomUUID()`, never auto-increment

@@ -1,8 +1,8 @@
 import { db } from '@/lib/db';
-import { DEFAULT_CATEGORIES, syncDefaultCategories } from '@/lib/categories';
+import { DEFAULT_CATEGORIES, seedDefaultCategories } from '@/lib/categories';
 import { DEFAULT_ACCOUNTS, accountUuid, CASH_DRAWER_ID } from '@/lib/coa';
 import { invalidateCodeToIdMap } from '@/lib/transactions';
-import { assertBuiltInSyncIds } from '@/lib/syncIds';
+import { assertBuiltInRecordIds } from '@/lib/recordIds';
 import { DET_IDS_MIGRATION, syncMissingDefaultAccounts } from '@/lib/migrations/deterministicIds';
 import { DATA_MIGRATIONS } from '@/lib/migrations/registry';
 
@@ -50,16 +50,16 @@ export async function runMigrations(): Promise<void> {
   }
 
   await syncMissingDefaultAccounts();
-  await syncDefaultCategories();
-  assertBuiltInSyncIds(
+  await seedDefaultCategories();
+  assertBuiltInRecordIds(
     DEFAULT_ACCOUNTS.map((a) => accountUuid(a.code)),
     'account',
   );
-  assertBuiltInSyncIds(
+  assertBuiltInRecordIds(
     DEFAULT_CATEGORIES.map((c) => c.id),
     'product category',
   );
-  assertBuiltInSyncIds([CASH_DRAWER_ID], 'cash drawer');
+  assertBuiltInRecordIds([CASH_DRAWER_ID], 'cash drawer');
   invalidateCodeToIdMap();
 }
 

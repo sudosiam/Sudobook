@@ -118,7 +118,7 @@ async function recordStockMovement(
   return balanceAfter;
 }
 
-/** Persist a product change and queue it for cloud sync (inventory must sync). */
+/** Persist a product stock change inside the caller's Dexie transaction. */
 async function updateProductStock(
   id: string,
   patch: Partial<Product>,
@@ -841,7 +841,7 @@ type AdjustmentPaymentInput = {
   bankAccountId?: string;
 };
 
-/** Void adjustment inside an existing Dexie transaction (no sync). */
+/** Void adjustment inside an existing Dexie transaction. */
 async function voidAdjustmentRecordTx(linkedId: string, reason: string): Promise<void> {
   await reverseBankTxnsFor(linkedId);
   await voidLinkedJournalEntries(linkedId, [], reason);

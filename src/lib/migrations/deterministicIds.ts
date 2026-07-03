@@ -5,7 +5,7 @@ export const DET_IDS_MIGRATION = 'det-ids-v1';
 
 /**
  * Re-key accounts and the cash drawer to deterministic ids and remap all
- * references, so this device matches every other device (and the cloud).
+ * references, so reinstalls and backup restores stay consistent.
  */
 export async function migrateDeterministicIds(): Promise<void> {
   await db.transaction(

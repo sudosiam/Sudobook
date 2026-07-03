@@ -17,7 +17,6 @@ export interface Account {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  syncedAt?: string;
 }
 
 export interface JournalLine {
@@ -51,7 +50,6 @@ export interface JournalEntry {
   reversalOf?: string; // journal entry this reverses (for voids)
   createdAt: string;
   updatedAt: string;
-  syncedAt?: string;
 }
 
 export interface Customer {
@@ -64,7 +62,6 @@ export interface Customer {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  syncedAt?: string;
 }
 
 export interface Vendor {
@@ -78,7 +75,6 @@ export interface Vendor {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  syncedAt?: string;
 }
 
 /** User-managed product category — replaces the old fixed 5-value enum so the
@@ -91,7 +87,6 @@ export interface ProductCategory {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  syncedAt?: string;
 }
 
 export interface Product {
@@ -107,7 +102,6 @@ export interface Product {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  syncedAt?: string;
 }
 
 export type PaymentMethod = 'cash' | 'bank' | 'upi' | 'partial' | 'credit';
@@ -142,7 +136,6 @@ export interface Sale {
   cogsEntryId?: string;
   createdAt: string;
   updatedAt: string;
-  syncedAt?: string;
 }
 
 export interface PurchaseItem {
@@ -172,7 +165,6 @@ export interface Purchase {
   journalEntryId: string;
   createdAt: string;
   updatedAt: string;
-  syncedAt?: string;
 }
 
 export interface Expense {
@@ -192,7 +184,6 @@ export interface Expense {
   voidedAt?: string | null;
   createdAt: string;
   updatedAt: string;
-  syncedAt?: string;
 }
 
 export interface RecurringExpense {
@@ -209,7 +200,6 @@ export interface RecurringExpense {
   lastPostedMonth?: string; // "2024-07" — last month an expense was generated
   createdAt: string;
   updatedAt: string;
-  syncedAt?: string;
 }
 
 export type BankAccountType = 'current' | 'savings' | 'cash';
@@ -225,7 +215,6 @@ export interface BankAccount {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  syncedAt?: string;
 }
 
 export interface BankTransaction {
@@ -241,7 +230,6 @@ export interface BankTransaction {
   journalEntryId?: string;
   createdAt: string;
   updatedAt: string;
-  syncedAt?: string;
 }
 
 export interface StockMovement {
@@ -256,8 +244,7 @@ export interface StockMovement {
   linkedId?: string;
   note?: string;
   createdAt: string;
-  updatedAt: string; // same as createdAt (immutable records) — needed for Dexie Cloud conflict resolution
-  syncedAt?: string;
+  updatedAt: string; // same as createdAt (immutable records)
 }
 
 export interface AppSettings {
@@ -440,7 +427,7 @@ class SudoBooksDB extends Dexie {
       backupSnapshots: 'id, createdAt',
     });
 
-    // v6 — Dexie Cloud: drop legacy Supabase syncQueue store.
+    // v6 — drop legacy syncQueue store (removed in local-only app).
     this.version(6).stores({
       accounts: 'id, code, type, parentCode, isActive',
       journalEntries: 'id, date, entryType, status, linkedId',

@@ -7,9 +7,7 @@ const LEGACY_SLUGS = ['escooter', 'erickshaw', 'battery', 'part', 'other'] as co
 
 /**
  * Default categories originally used slug ids ('escooter', …) so existing
- * Product.category values kept working locally. Supabase mirror tables require
- * uuid primary keys — migrate slugs → deterministic UUIDs and purge bad sync
- * queue rows that can never succeed.
+ * Product.category values kept working locally. Migrate slugs → deterministic UUIDs.
  */
 export async function migrateCategorySlugIds(): Promise<void> {
   await db.transaction(
