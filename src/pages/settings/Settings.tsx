@@ -485,6 +485,9 @@ export default function Settings() {
             </div>
           </section>
 
+          <p className="text-center text-xs text-muted">
+            Local app — all data stays on this device
+          </p>
           <p className="text-center text-xs text-disabled">
             Sudo Books v{APP_VERSION}
           </p>

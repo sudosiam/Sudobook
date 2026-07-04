@@ -1,9 +1,9 @@
 {
   "name": "sudo-books",
   "private": true,
-  "version": "5.0.1",
+  "version": "5.0.2",
   "type": "module",
-  "description": "Local-first accounting & finance PWA",
+  "description": "Local-only accounting & finance PWA",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
