@@ -11,13 +11,6 @@ import { INITIAL_MIGRATION_TOKENS, runMigrations } from '@/lib/migrations/runner
  */
 const SEED_EPOCH = '2020-01-01T00:00:00.000Z';
 
-/** Short random per-device code (e.g. "A3F9K2") keeps document numbers unique across devices. */
-function makeDeviceId(): string {
-  const bytes = new Uint8Array(6);
-  crypto.getRandomValues(bytes);
-  return [...bytes].map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 6).toUpperCase();
-}
-
 /** Account codes required before any sale/purchase/expense can post. */
 const ESSENTIAL_ACCOUNT_CODES = [
   CODES.CASH,
@@ -142,7 +135,6 @@ export async function seedDatabase(): Promise<void> {
         cashAccountId,
         defaultBankId: cashDrawer.id,
         currency: 'INR',
-        deviceId: makeDeviceId(),
         migrations: [...INITIAL_MIGRATION_TOKENS],
         saleSequence: 0,
         purchaseSequence: 0,

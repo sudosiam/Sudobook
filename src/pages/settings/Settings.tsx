@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { Download, Trash2, Upload, Wrench } from 'lucide-react';
 import { TopBar } from '@/components/layout/TopBar';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -20,11 +20,8 @@ import {
   updateAutoBackupSettings,
   type AutoBackupInterval,
 } from '@/lib/scheduledBackup';
-import {
-  clearBackupFolder,
-  isBackupFolderSupported,
-  pickBackupFolder,
-} from '@/lib/backupFolder';
+import { isBackupFolderSupported } from '@/lib/backupFolder';
+import { useDatabaseStore } from '@/store/useDatabaseStore';
 import {
   previewVoidReversalCleanup,
   repairVoidDoubleReversals,
@@ -49,7 +46,7 @@ export default function Settings() {
     () => db.backupSnapshots.orderBy('createdAt').reverse().limit(5).toArray(),
     [],
   );
-  const backupFolder = useLiveQuery(() => db.backupFolder.get('singleton'), []);
+  const dataFolderName = useDatabaseStore((s) => s.folderName);
   const folderSupported = isBackupFolderSupported();
 
   useEffect(() => {
@@ -172,26 +169,6 @@ export default function Settings() {
     }
   };
 
-  const chooseBackupFolder = async () => {
-    try {
-      const name = await pickBackupFolder();
-      await saveAutoBackup({ autoBackupSaveToFolder: true });
-      toast.success(`Backups will save to folder “${name}”`);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      toast.error(getErrorMessage(err, 'Could not access folder'));
-    }
-  };
-
-  const removeBackupFolder = async () => {
-    try {
-      await clearBackupFolder();
-      await saveAutoBackup({ autoBackupSaveToFolder: false });
-      toast.info('Backup folder removed');
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not remove folder'));
-    }
-  };
 
   const confirmSnapshotRestore = async () => {
     if (!pendingSnapshotId) return;
@@ -307,64 +284,28 @@ export default function Settings() {
                         }
                       />
                     </label>
-                    {folderSupported ? (
+                    {folderSupported && dataFolderName ? (
                       <div className="space-y-2 rounded-xl border border-border-app/40 bg-app p-3">
                         <label className="flex min-h-[48px] cursor-pointer items-center justify-between gap-3">
-                          <span className="text-sm text-foreground">Save to folder</span>
+                          <span className="text-sm text-foreground">Save JSON copies to data folder</span>
                           <input
                             type="checkbox"
                             className="h-5 w-5 accent-brand"
                             checked={settings.autoBackupSaveToFolder === true}
-                            disabled={!backupFolder}
-                            onChange={(e) => {
-                              if (e.target.checked && !backupFolder) {
-                                void chooseBackupFolder();
-                                return;
-                              }
-                              void saveAutoBackup({ autoBackupSaveToFolder: e.target.checked });
-                            }}
+                            onChange={(e) =>
+                              void saveAutoBackup({ autoBackupSaveToFolder: e.target.checked })
+                            }
                           />
                         </label>
-                        {backupFolder ? (
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                            <p className="min-w-0 flex-1 truncate text-xs text-muted">
-                              Folder:{' '}
-                              <span className="font-medium text-foreground">
-                                {backupFolder.folderName}
-                              </span>
-                            </p>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="secondary"
-                                className="min-h-[40px] flex-1 px-3 py-2 text-xs sm:flex-none"
-                                onClick={() => void chooseBackupFolder()}
-                              >
-                                Change
-                              </Button>
-                              <Button
-                                variant="secondary"
-                                className="min-h-[40px] flex-1 px-3 py-2 text-xs sm:flex-none"
-                                onClick={() => void removeBackupFolder()}
-                              >
-                                Remove
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <Button
-                            variant="secondary"
-                            className="w-full min-h-[44px] text-sm"
-                            onClick={() => void chooseBackupFolder()}
-                          >
-                            Choose backup folder…
-                          </Button>
-                        )}
                         <p className="text-[11px] text-muted">
-                          Automatic and “Backup now” writes JSON files directly into the folder you
-                          pick (Chrome / Edge). The app remembers your choice on this device.
+                          Folder:{' '}
+                          <span className="font-medium text-foreground">{dataFolderName}</span>
+                          {' — '}
+                          <span className="font-mono">sudo-books.db</span> plus optional{' '}
+                          <span className="font-mono">backups/*.json</span>
                         </p>
                       </div>
-                    ) : (
+                    ) : folderSupported ? null : (
                       <p className="text-xs text-muted">
                         Folder backup needs a browser with folder access (Chrome or Edge on desktop
                         or Android). Use “Download JSON file” on other devices.
@@ -486,7 +427,7 @@ export default function Settings() {
           </section>
 
           <p className="text-center text-xs text-muted">
-            Local app — all data stays on this device
+            SQLite database in your chosen folder — you own the files
           </p>
           <p className="text-center text-xs text-disabled">
             Sudo Books v{APP_VERSION}

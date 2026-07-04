@@ -68,8 +68,7 @@ export async function nextDocumentNumberTx(
   patch[field] = next;
   await db.settings.update('singleton', patch);
 
-  const suffix = settings.deviceId ? `-${settings.deviceId}` : '';
-  return `${prefix}-${fyYear}-${String(next).padStart(3, '0')}${suffix}`;
+  return `${prefix}-${fyYear}-${String(next).padStart(3, '0')}`;
 }
 
 async function nextNumber(

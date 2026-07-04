@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { format, parseISO } from 'date-fns';
 import { Calendar, ChevronRight, CreditCard, User } from 'lucide-react';
 import { TopBar } from '@/components/layout/TopBar';

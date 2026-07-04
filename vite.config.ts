@@ -38,6 +38,10 @@ export default defineConfig({
       },
     }),
   ],
+  optimizeDeps: {
+    exclude: ['sql.js'],
+  },
+  assetsInclude: ['**/*.wasm'],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -53,7 +57,7 @@ export default defineConfig({
 
           if (has('recharts')) return 'vendor-charts';
           if (has('motion')) return 'vendor-motion';
-          if (has('dexie') || has('dexie-react-hooks')) return 'vendor-db';
+          if (has('sql.js') || has('dexie')) return 'vendor-db';
           if (has('react-hook-form') || has('@hookform') || has('zod')) return 'vendor-forms';
           if (has('react-router') || has('react-router-dom')) return 'vendor-router';
           if (has('react') || has('react-dom') || has('scheduler')) return 'vendor-react';

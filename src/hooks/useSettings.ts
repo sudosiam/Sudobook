@@ -1,4 +1,4 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { db, type AppSettings } from '@/lib/db';
 
 export function useSettings(): AppSettings | undefined {

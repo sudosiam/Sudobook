@@ -1,6 +1,9 @@
-import Dexie, { type Table } from 'dexie';
 import { generateUuid } from '@/lib/utils';
 import type { DashboardMetrics, MonthPoint, NetWorthPoint } from '@/lib/reports';
+import { SqlTable, runSqlTransaction, type TransactionMode } from '@/lib/sqlite/collection';
+
+type AnySqlTable = SqlTable<{ id: string }>;
+import { isDatabaseReady } from '@/lib/sqlite/engine';
 
 // ─── CORE TYPES ───────────────────────────────────────────────
 
@@ -255,8 +258,6 @@ export interface AppSettings {
   cashAccountId: string;
   defaultBankId: string;
   currency: 'INR';
-  /** Short random per-device code (e.g. "A3") that makes document numbers collision-proof across devices. */
-  deviceId?: string;
   /** Guards one-time data migrations that must not re-run. */
   migrations?: string[];
   saleSequence: number;
@@ -280,7 +281,7 @@ export interface AppSettings {
   seeded: boolean;
 }
 
-/** Persisted File System Access API directory handle for scheduled backups. */
+/** Persisted folder handle lives in metaDb — not in the SQLite file. */
 export interface BackupFolderRecord {
   id: 'singleton';
   folderName: string;
@@ -301,219 +302,86 @@ export interface BackupSnapshot {
   };
 }
 
-class SudoBooksDB extends Dexie {
-  accounts!: Table<Account, string>;
-  journalEntries!: Table<JournalEntry, string>;
-  customers!: Table<Customer, string>;
-  vendors!: Table<Vendor, string>;
-  products!: Table<Product, string>;
-  productCategories!: Table<ProductCategory, string>;
-  sales!: Table<Sale, string>;
-  purchases!: Table<Purchase, string>;
-  expenses!: Table<Expense, string>;
-  recurringExpenses!: Table<RecurringExpense, string>;
-  bankAccounts!: Table<BankAccount, string>;
-  bankTransactions!: Table<BankTransaction, string>;
-  stockMovements!: Table<StockMovement, string>;
-  settings!: Table<AppSettings, string>;
-  backupSnapshots!: Table<BackupSnapshot, string>;
-  backupFolder!: Table<BackupFolderRecord, string>;
-  dashboardCache!: Table<
-    {
-      id: string;
-      metrics: DashboardMetrics;
-      monthlySeries: MonthPoint[];
-      netWorthSeries: NetWorthPoint[];
-      dashboardRevision: number;
-      updatedAt: string;
-    },
-    string
-  >;
+class SudoBooksDB {
+  accounts = new SqlTable<Account>('accounts');
+  journalEntries = new SqlTable<JournalEntry>('journalEntries');
+  customers = new SqlTable<Customer>('customers');
+  vendors = new SqlTable<Vendor>('vendors');
+  products = new SqlTable<Product>('products');
+  productCategories = new SqlTable<ProductCategory>('productCategories');
+  sales = new SqlTable<Sale>('sales');
+  purchases = new SqlTable<Purchase>('purchases');
+  expenses = new SqlTable<Expense>('expenses');
+  recurringExpenses = new SqlTable<RecurringExpense>('recurringExpenses');
+  bankAccounts = new SqlTable<BankAccount>('bankAccounts');
+  bankTransactions = new SqlTable<BankTransaction>('bankTransactions');
+  stockMovements = new SqlTable<StockMovement>('stockMovements');
+  settings = new SqlTable<AppSettings>('settings');
+  backupSnapshots = new SqlTable<BackupSnapshot>('backupSnapshots');
+  dashboardCache = new SqlTable<{
+    id: string;
+    metrics: DashboardMetrics;
+    monthlySeries: MonthPoint[];
+    netWorthSeries: NetWorthPoint[];
+    dashboardRevision: number;
+    updatedAt: string;
+  }>('dashboardCache');
 
-  constructor() {
-    super('SudoBooksDB');
+  /** All business tables (for factory reset / full restore). */
+  get tables(): AnySqlTable[] {
+    return [
+      this.accounts,
+      this.journalEntries,
+      this.customers,
+      this.vendors,
+      this.products,
+      this.productCategories,
+      this.sales,
+      this.purchases,
+      this.expenses,
+      this.recurringExpenses,
+      this.bankAccounts,
+      this.bankTransactions,
+      this.stockMovements,
+      this.settings,
+      this.backupSnapshots,
+      this.dashboardCache,
+    ] as unknown as AnySqlTable[];
+  }
 
-    // Schema versioning only — bump when stores/indexes change.
-    // One-time data backfills run via `runMigrations()` in lib/migrations/runner.ts
-    // (tracked in settings.migrations), not Dexie `.upgrade()` hooks.
+  table(name: string): AnySqlTable {
+    const found = this.tables.find((t) => t.name === name);
+    if (!found) throw new Error(`Unknown table: ${name}`);
+    return found;
+  }
 
-    this.version(1).stores({
-      accounts: 'id, code, type, parentCode, isActive',
-      journalEntries: 'id, date, entryType, status, linkedId',
-      customers: 'id, name, phone, isActive',
-      vendors: 'id, name, phone, isActive',
-      products: 'id, sku, category, isActive',
-      sales: 'id, saleNumber, date, customerId, status',
-      purchases: 'id, purchaseNumber, date, vendorId, status',
-      expenses: 'id, expenseNumber, date, accountCode',
-      bankAccounts: 'id, name, accountId, isActive',
-      bankTransactions: 'id, bankAccountId, date, type, linkedId',
-      stockMovements: 'id, productId, date, type, linkedId',
-      syncQueue: 'id, table, status, timestamp',
-      settings: 'id',
-    });
-
-    this.version(2).stores({
-      accounts: 'id, code, type, parentCode, isActive',
-      journalEntries: 'id, date, entryType, status, linkedId',
-      customers: 'id, name, phone, isActive',
-      vendors: 'id, name, phone, isActive',
-      products: 'id, sku, category, isActive',
-      sales: 'id, saleNumber, date, customerId, status',
-      purchases: 'id, purchaseNumber, date, vendorId, status',
-      expenses: 'id, expenseNumber, date, accountCode',
-      recurringExpenses: 'id, isActive, dayOfMonth',
-      bankAccounts: 'id, name, accountId, isActive',
-      bankTransactions: 'id, bankAccountId, date, type, linkedId',
-      stockMovements: 'id, productId, date, type, linkedId',
-      syncQueue: 'id, table, status, timestamp',
-      settings: 'id',
-    });
-
-    this.version(3).stores({
-      accounts: 'id, code, type, parentCode, isActive',
-      journalEntries: 'id, date, entryType, status, linkedId',
-      customers: 'id, name, phone, isActive',
-      vendors: 'id, name, phone, isActive',
-      products: 'id, sku, category, isActive',
-      productCategories: 'id, name, isActive',
-      sales: 'id, saleNumber, date, customerId, status',
-      purchases: 'id, purchaseNumber, date, vendorId, status',
-      expenses: 'id, expenseNumber, date, accountCode',
-      recurringExpenses: 'id, isActive, dayOfMonth',
-      bankAccounts: 'id, name, accountId, isActive',
-      bankTransactions: 'id, bankAccountId, date, type, linkedId',
-      stockMovements: 'id, productId, date, type, linkedId',
-      syncQueue: 'id, table, status, timestamp',
-      settings: 'id',
-    });
-
-    this.version(4).stores({
-      accounts: 'id, code, type, parentCode, isActive',
-      journalEntries: 'id, date, entryType, status, linkedId',
-      customers: 'id, name, phone, isActive',
-      vendors: 'id, name, phone, isActive',
-      products: 'id, sku, category, isActive',
-      productCategories: 'id, name, isActive',
-      sales: 'id, saleNumber, date, customerId, status',
-      purchases: 'id, purchaseNumber, date, vendorId, status',
-      expenses: 'id, expenseNumber, date, accountCode',
-      recurringExpenses: 'id, isActive, dayOfMonth',
-      bankAccounts: 'id, name, accountId, isActive',
-      bankTransactions: 'id, bankAccountId, date, type, linkedId',
-      stockMovements: 'id, productId, date, type, linkedId',
-      syncQueue: 'id, table, status, timestamp',
-      settings: 'id',
-      dashboardCache: 'id, updatedAt',
-    });
-
-    this.version(5).stores({
-      accounts: 'id, code, type, parentCode, isActive',
-      journalEntries: 'id, date, entryType, status, linkedId',
-      customers: 'id, name, phone, isActive',
-      vendors: 'id, name, phone, isActive',
-      products: 'id, sku, category, isActive',
-      productCategories: 'id, name, isActive',
-      sales: 'id, saleNumber, date, customerId, status',
-      purchases: 'id, purchaseNumber, date, vendorId, status',
-      expenses: 'id, expenseNumber, date, accountCode',
-      recurringExpenses: 'id, isActive, dayOfMonth',
-      bankAccounts: 'id, name, accountId, isActive',
-      bankTransactions: 'id, bankAccountId, date, type, linkedId',
-      stockMovements: 'id, productId, date, type, linkedId',
-      syncQueue: 'id, table, status, timestamp',
-      settings: 'id',
-      dashboardCache: 'id, updatedAt',
-      backupSnapshots: 'id, createdAt',
-    });
-
-    // v6 — drop legacy syncQueue store (removed in local-only app).
-    this.version(6).stores({
-      accounts: 'id, code, type, parentCode, isActive',
-      journalEntries: 'id, date, entryType, status, linkedId',
-      customers: 'id, name, phone, isActive',
-      vendors: 'id, name, phone, isActive',
-      products: 'id, sku, category, isActive',
-      productCategories: 'id, name, isActive',
-      sales: 'id, saleNumber, date, customerId, status',
-      purchases: 'id, purchaseNumber, date, vendorId, status',
-      expenses: 'id, expenseNumber, date, accountCode',
-      recurringExpenses: 'id, isActive, dayOfMonth',
-      bankAccounts: 'id, name, accountId, isActive',
-      bankTransactions: 'id, bankAccountId, date, type, linkedId',
-      stockMovements: 'id, productId, date, type, linkedId',
-      settings: 'id',
-      dashboardCache: 'id, updatedAt',
-      backupSnapshots: 'id, createdAt',
-    });
-
-    // v7 — optional File System Access API backup folder handle (local only).
-    this.version(7).stores({
-      accounts: 'id, code, type, parentCode, isActive',
-      journalEntries: 'id, date, entryType, status, linkedId',
-      customers: 'id, name, phone, isActive',
-      vendors: 'id, name, phone, isActive',
-      products: 'id, sku, category, isActive',
-      productCategories: 'id, name, isActive',
-      sales: 'id, saleNumber, date, customerId, status',
-      purchases: 'id, purchaseNumber, date, vendorId, status',
-      expenses: 'id, expenseNumber, date, accountCode',
-      recurringExpenses: 'id, isActive, dayOfMonth',
-      bankAccounts: 'id, name, accountId, isActive',
-      bankTransactions: 'id, bankAccountId, date, type, linkedId',
-      stockMovements: 'id, productId, date, type, linkedId',
-      settings: 'id',
-      dashboardCache: 'id, updatedAt',
-      backupSnapshots: 'id, createdAt',
-      backupFolder: 'id',
-    });
+  transaction<T>(mode: TransactionMode, ...rest: unknown[]): Promise<T> {
+    const fn = rest[rest.length - 1];
+    if (typeof fn !== 'function') {
+      throw new Error('db.transaction requires a callback as the last argument');
+    }
+    const tables = rest.slice(0, -1);
+    return runSqlTransaction(mode, tables, fn as () => T | Promise<T>);
   }
 }
 
 export const db = new SudoBooksDB();
 
-/**
- * Multi-tab / multi-device schema-upgrade safety net.
- *
- * If this app is open in more than one tab (or as an installed PWA AND a
- * browser tab at the same time) and one of them loads a newer build with a
- * bumped Dexie version, the OLDER connection blocks the upgrade — and every
- * subsequent read/write on the older tab starts throwing raw IndexedDB
- * errors ("TransactionInactiveError", "DatabaseClosedError", etc). That's
- * confusing and looks like random data-loss risk, so we handle both sides:
- *
- * - The OLDER tab closes its connection the moment a newer one asks to
- *   upgrade, and tells the user to reload instead of silently failing.
- * - The NEWER tab surfaces a warning if it had to wait on a blocked upgrade,
- *   instead of hanging forever with no feedback.
- */
+/** @deprecated SQLite file is the source of truth — kept for callers that still check. */
 export let dbNeedsReload = false;
-const DB_OUTDATED_EVENT = 'sudobooks:db-outdated';
-
-db.on('versionchange', () => {
-  dbNeedsReload = true;
-  db.close();
-  window.dispatchEvent(new CustomEvent(DB_OUTDATED_EVENT));
-});
-
-db.on('blocked', () => {
-  console.warn('[db] Upgrade blocked by another open tab — waiting for it to close or reload.');
-});
 
 export function onDbOutdated(handler: () => void): () => void {
-  window.addEventListener(DB_OUTDATED_EVENT, handler);
-  return () => window.removeEventListener(DB_OUTDATED_EVENT, handler);
+  void handler;
+  return () => undefined;
 }
 
-/** True when this tab must reload before any IndexedDB writes will succeed. */
 export function isDbOutdated(): boolean {
-  return dbNeedsReload;
+  return false;
 }
 
-/** Throws when this tab lost its Dexie connection (schema upgrade elsewhere). */
 export function assertDbWritable(): void {
-  if (dbNeedsReload) {
-    throw new Error('This tab is out of date — reload the app to save your data.');
+  if (!isDatabaseReady()) {
+    throw new Error('Database not ready — choose a data folder first');
   }
 }
 
@@ -521,7 +389,7 @@ export function assertDbWritable(): void {
  * Active rows only. Uses `.filter()` because boolean `true` in IndexedDB does not
  * match Dexie `.equals(1)` — see comment above.
  */
-export function activeWhere<T extends { isActive: boolean }>(table: Table<T, string>) {
+export function activeWhere<T extends { id: string; isActive: boolean }>(table: SqlTable<T>) {
   return table.filter((row) => row.isActive);
 }
 

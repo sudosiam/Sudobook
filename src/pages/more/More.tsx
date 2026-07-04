@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { Building2, ChevronRight, CreditCard, Landmark, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { TopBar } from '@/components/layout/TopBar';

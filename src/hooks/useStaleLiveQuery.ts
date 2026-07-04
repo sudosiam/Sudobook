@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '@/hooks/useLiveQuery';
 
 /**
  * Like useLiveQuery but keeps the last resolved value while a new query runs.

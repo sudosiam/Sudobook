@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { format } from 'date-fns';
 import { Button, Field, FormDateInput, Input, Select } from '@/components/common/Field';
 import { MoneyInput } from '@/components/common/MoneyInput';

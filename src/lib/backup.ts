@@ -99,13 +99,14 @@ export async function restoreBackup(backup: BackupFile): Promise<void> {
       if (!Array.isArray(rows)) continue;
       await db.table(t).clear();
       if (t === 'settings') {
-        await db.table(t).bulkPut(rows);
+        await db.table(t).bulkPut(rows as Array<{ id: string }>);
         continue;
       }
       const stamped = rows.map((row) => {
         const r = row as Record<string, unknown> & { id?: string; createdAt?: string };
         return {
           ...r,
+          id: r.id ?? crypto.randomUUID(),
           updatedAt: restoredAt,
           createdAt: r.createdAt ?? restoredAt,
         };

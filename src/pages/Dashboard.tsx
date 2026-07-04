@@ -13,7 +13,7 @@ import { useFinancials } from '@/hooks/useFinancials';
 import { useAppStore } from '@/store/useAppStore';
 import { usePeriodStore } from '@/store/usePeriodStore';
 import { getLowStockCount } from '@/lib/reports';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '@/hooks/useLiveQuery';
 
 const NetWorthChart = lazy(async () => {
   const mod = await import('@/components/charts/NetWorthChart');
@@ -52,7 +52,7 @@ export default function Dashboard() {
               </RevealItem>
             )}
 
-            {lowStockCount > 0 && (
+            {(lowStockCount ?? 0) > 0 && (
               <RevealItem>
                 <Link
                   to="/inventory"

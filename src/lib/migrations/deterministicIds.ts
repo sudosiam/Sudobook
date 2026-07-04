@@ -48,8 +48,8 @@ export async function migrateDeterministicIds(): Promise<void> {
       const cashDrawer = banks.find((b) => b.accountType === 'cash');
       if (cashDrawer && cashDrawer.id !== CASH_DRAWER_ID) {
         const oldId = cashDrawer.id;
-        const remap = async (local: string, _remote: string) => {
-          const table = db.table(local);
+        const remap = async (tableName: string) => {
+          const table = db.table(tableName);
           const all = (await table.toArray()) as Array<
             Record<string, unknown> & { id: string; bankAccountId?: string }
           >;
@@ -59,10 +59,10 @@ export async function migrateDeterministicIds(): Promise<void> {
             await table.put(fixed);
           }
         };
-        await remap('sales', 'sales');
-        await remap('purchases', 'purchases');
-        await remap('expenses', 'expenses');
-        await remap('bankTransactions', 'bank_transactions');
+        await remap('sales');
+        await remap('purchases');
+        await remap('expenses');
+        await remap('bankTransactions');
 
         await db.bankAccounts.delete(oldId);
         const fixed: BankAccount = {
@@ -87,7 +87,7 @@ export async function migrateDeterministicIds(): Promise<void> {
 }
 
 /** Add any new default accounts missing from older installs (idempotent). */
-export async function syncMissingDefaultAccounts(): Promise<void> {
+export async function ensureMissingDefaultAccounts(): Promise<void> {
   await db.transaction('rw', db.accounts, async () => {
     for (const seed of DEFAULT_ACCOUNTS) {
       const already = await db.accounts.where('code').equals(seed.code).first();

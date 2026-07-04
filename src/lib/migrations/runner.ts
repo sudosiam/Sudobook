@@ -3,14 +3,8 @@ import { DEFAULT_CATEGORIES, seedDefaultCategories } from '@/lib/categories';
 import { DEFAULT_ACCOUNTS, accountUuid, CASH_DRAWER_ID } from '@/lib/coa';
 import { invalidateCodeToIdMap } from '@/lib/transactions';
 import { assertBuiltInRecordIds } from '@/lib/recordIds';
-import { DET_IDS_MIGRATION, syncMissingDefaultAccounts } from '@/lib/migrations/deterministicIds';
+import { DET_IDS_MIGRATION, ensureMissingDefaultAccounts } from '@/lib/migrations/deterministicIds';
 import { DATA_MIGRATIONS } from '@/lib/migrations/registry';
-
-/** Short random per-device code (e.g. "A3F9K2") keeps document numbers unique across devices. */
-function makeDeviceId(): string {
-  const n = Math.floor(Math.random() * 36 ** 6);
-  return n.toString(36).padStart(6, '0').toUpperCase();
-}
 
 async function markMigrationDone(id: string): Promise<void> {
   const settings = await db.settings.get('singleton');
@@ -31,10 +25,6 @@ export async function runMigrations(): Promise<void> {
   const settings = await db.settings.get('singleton');
   if (!settings) return;
 
-  if (!settings.deviceId) {
-    await db.settings.update('singleton', { deviceId: makeDeviceId() });
-  }
-
   const done = new Set(settings.migrations ?? []);
 
   for (const migration of DATA_MIGRATIONS) {
@@ -49,7 +39,7 @@ export async function runMigrations(): Promise<void> {
     }
   }
 
-  await syncMissingDefaultAccounts();
+  await ensureMissingDefaultAccounts();
   await seedDefaultCategories();
   assertBuiltInRecordIds(
     DEFAULT_ACCOUNTS.map((a) => accountUuid(a.code)),

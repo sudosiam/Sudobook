@@ -29,7 +29,7 @@ pnpm-debug.log*
 dev-dist
 *.tsbuildinfo
 
-# Dexie Cloud CLI credentials (never commit)
+# Legacy cloud CLI credentials (never commit)
 dexie-cloud.json
 dexie-cloud.key
 

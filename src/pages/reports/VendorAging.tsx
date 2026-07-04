@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { format } from 'date-fns';
 import { Truck } from 'lucide-react';
 import { TopBar } from '@/components/layout/TopBar';

@@ -80,7 +80,7 @@ Install as a PWA on Android for the best experience (Add to Home Screen).
 | `products`, `productCategories`, `stockMovements` | Inventory |
 | `sales`, `purchases`, `expenses`, `recurringExpenses` | Business documents |
 | `bankAccounts`, `bankTransactions` | Cash/bank register |
-| `settings` | Singleton: sequences, FY, device ID, backup prefs |
+| `settings` | Singleton: sequences, FY, backup prefs |
 | `dashboardCache` | Computed dashboard metrics |
 | `backupSnapshots` | Rolling on-device backups (max 5) |
 | `backupFolder` | Optional folder for automatic backups |

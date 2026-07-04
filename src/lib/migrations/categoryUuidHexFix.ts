@@ -7,8 +7,8 @@ import {
 export const CATEGORY_UUID_HEX_MIGRATION = 'category-uuid-hex-v2';
 
 /**
- * v2.0.x used category ids like `…-escooter0000` (non-hex tail) which Postgres
- * rejects. Re-key defaults to fixed hex UUIDs and remap products + sync queue.
+ * v2.0.x used category ids like `…-escooter0000` (non-hex tail). Re-key defaults
+ * to fixed hex UUIDs and remap products.
  */
 export async function migrateCategoryUuidHexFix(): Promise<void> {
   await db.transaction(

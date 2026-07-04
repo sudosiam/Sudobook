@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { ExternalLink } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
 import { MoneyDisplay } from '@/components/common/MoneyDisplay';

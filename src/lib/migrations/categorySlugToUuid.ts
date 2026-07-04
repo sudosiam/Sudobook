@@ -57,7 +57,7 @@ export async function migrateCategorySlugIds(): Promise<void> {
   );
 }
 
-/** True when id is one of the legacy slug primary keys (invalid for Supabase). */
+/** True when id is one of the legacy slug primary keys (pre-UUID migration). */
 export function isLegacyCategorySlug(id: string): boolean {
   return (LEGACY_SLUGS as readonly string[]).includes(id);
 }

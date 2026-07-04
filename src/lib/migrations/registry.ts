@@ -36,7 +36,7 @@ export const DATA_MIGRATIONS: DataMigration[] = [
   { id: CATEGORY_SLUG_MIGRATION, run: migrateCategorySlugIds },
   { id: CATEGORY_UUID_HEX_MIGRATION, run: migrateCategoryUuidHexFix },
   { id: SCRUB_INVALID_RECORD_IDS_MIGRATION, run: scrubInvalidRecordIds },
-  /** Legacy token — no-op, kept so existing installs do not re-run removed logic. */
+  /** Legacy no-op — token kept so upgraded installs do not re-run removed cloud-sync logic. */
   { id: 'retry-failed-sync-queue-v1', run: async () => {} },
   { id: CLEAR_DEFAULT_BUSINESS_NAME_MIGRATION, run: clearDefaultBusinessName },
 ];

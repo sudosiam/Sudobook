@@ -1,14 +1,15 @@
-import { StrictMode } from 'react';
+import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from '@/App';
+import DataFolderSetup from '@/pages/setup/DataFolderSetup';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
-import { DbOutdatedBanner } from '@/components/common/DbOutdatedBanner';
 import { PwaUpdateBanner } from '@/components/common/PwaUpdateBanner';
-import { seedDatabase } from '@/lib/seed';
+import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { postDueRecurringExpenses } from '@/lib/recurring';
 import { startBackupScheduler } from '@/lib/scheduledBackup';
 import { applyTheme, getStoredTheme } from '@/store/useThemeStore';
+import { useDatabaseStore } from '@/store/useDatabaseStore';
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-500.css';
 import '@fontsource/inter/latin-600.css';
@@ -19,13 +20,6 @@ import '@fontsource/roboto/latin-600.css';
 import '@fontsource/roboto/latin-700.css';
 import '@/styles/globals.css';
 
-/**
- * Ask the browser to exempt IndexedDB from "best-effort" storage eviction
- * under disk pressure. Best-effort: some browsers only grant this after
- * engagement heuristics (bookmarked/installed/frequently used) are met, but
- * it costs nothing to request and materially reduces silent data-loss risk
- * for a local-first accounting app. Never blocks or throws on failure.
- */
 async function requestPersistentStorage(): Promise<void> {
   try {
     if (!navigator.storage?.persist) return;
@@ -37,40 +31,54 @@ async function requestPersistentStorage(): Promise<void> {
   }
 }
 
-async function bootstrap() {
-  applyTheme(getStoredTheme());
-  void requestPersistentStorage();
+function Root() {
+  const phase = useDatabaseStore((s) => s.phase);
+  const checkExisting = useDatabaseStore((s) => s.checkExisting);
 
-  const rootEl = document.getElementById('root');
-  if (!rootEl) throw new Error('Root element not found');
+  useEffect(() => {
+    applyTheme(getStoredTheme());
+  }, []);
 
-  try {
-    await seedDatabase();
-    try {
-      await postDueRecurringExpenses();
-    } catch (err) {
+  useEffect(() => {
+    void checkExisting();
+  }, [checkExisting]);
+
+  useEffect(() => {
+    if (phase !== 'ready') return;
+    void requestPersistentStorage();
+    void postDueRecurringExpenses().catch((err) => {
       console.error('[postDueRecurringExpenses]', err);
-    }
+    });
     startBackupScheduler();
-  } catch (err) {
-    // Non-fatal: still render the app so existing local data remains visible
-    // even if a migration/seed step failed.
-    console.error('[bootstrap]', err);
+  }, [phase]);
+
+  if (phase === 'checking' || phase === 'loading') {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-app">
+        <LoadingSpinner />
+      </div>
+    );
   }
 
-  createRoot(rootEl).render(
-    <StrictMode>
-      <ErrorBoundary>
-        <DbOutdatedBanner />
-        <PwaUpdateBanner />
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <App />
-        </BrowserRouter>
-      </ErrorBoundary>
-    </StrictMode>,
+  if (phase === 'setup' || phase === 'error') {
+    return <DataFolderSetup />;
+  }
+
+  return (
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <App />
+    </BrowserRouter>
   );
 }
 
-void bootstrap().catch((err) => {
-  console.error('[bootstrap:fatal]', err);
-});
+const rootEl = document.getElementById('root');
+if (!rootEl) throw new Error('Root element not found');
+
+createRoot(rootEl).render(
+  <StrictMode>
+    <ErrorBoundary>
+      <PwaUpdateBanner />
+      <Root />
+    </ErrorBoundary>
+  </StrictMode>,
+);
